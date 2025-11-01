@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+
+# Environment & secrets
+.env
+
+# Flask / Logs
+instance/
+*.log
+
+# OS
+.DS_Store
