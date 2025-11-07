@@ -66,6 +66,7 @@ def get_devices():
     } for d in devices])
 
 @device_bp.route('/<int:instance_id>', methods=['GET'])
+@token_required
 def get_device(instance_id):
     device = Device.query.get_or_404(instance_id)
     return jsonify({
