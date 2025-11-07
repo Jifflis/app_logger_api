@@ -17,9 +17,11 @@ def create_app():
     from app.routes.device_logs import log_bp
     from app.routes.device_tags import tag_bp
     from app.routes.tokens import token_bp
-
+    from app.routes.webhook import webhook_bp
+	
     app.register_blueprint(user_bp, url_prefix='/api/users')
     app.register_blueprint(project_bp, url_prefix='/api/projects')
+    app.register_blueprint(webhook_bp)
     app.register_blueprint(device_bp, url_prefix='/api/devices')
     app.register_blueprint(log_bp, url_prefix='/api/logs')
     app.register_blueprint(tag_bp, url_prefix='/api/tags')
