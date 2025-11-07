@@ -29,6 +29,7 @@ def create_log():
     return jsonify({'message': 'Log created', 'log_id': log.log_id}), 201
 
 @log_bp.route('', methods=['GET'])
+@token_required
 def get_logs():
     logs = DeviceLog.query.all()
     return jsonify([{
