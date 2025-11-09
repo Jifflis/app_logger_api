@@ -10,6 +10,7 @@ def save_or_update_device(data):
             name= data.get('name'),
             model=data.get('model'),
             project_id = data.get('project_id'),
+            platform = data.get('platform').upper(),
             last_updated = data.get('actual_log_time'))
         db.session.add(device)
     else:
@@ -17,6 +18,7 @@ def save_or_update_device(data):
         device.name = data.get('name', device.name)
         device.model = data.get('model', device.model)
         device.project_id = data.get('project_id', device.project_id)
+        device.platform = data.get('platform',device.platform).upper()
         device.last_updated = data.get('actual_log_time',device.last_updated)
     db.session.commit()
     return device

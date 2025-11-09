@@ -11,6 +11,14 @@ class LogLevel(enum.Enum):
 class TokenStatus(enum.Enum):
     ACTIVE = "ACTIVE"
     INACTIVE = "INACTIVE"
+    
+class Platform(enum.Enum):
+    WEB = "web"
+    IOS = "ios"
+    ANDROID = "android"
+    MACOS = "macos"
+    WINDOWS = "windows"
+    UNKNOWN = "unknown"    
 
 
 class User(db.Model):
@@ -56,6 +64,7 @@ class Device(db.Model):
     project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
     name = db.Column(db.String(100), index=True)
     model = db.Column(db.String(100))
+    platform = db.Column(db.Enum(Platform), nullable=False, index=True, default=Platform.UNKNOWN)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_updated = db.Column(db.DateTime)
 

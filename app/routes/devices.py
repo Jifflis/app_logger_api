@@ -20,6 +20,7 @@ def initialize_device():
     #model
     #device_id
     #name
+    #platform = web,ios,android,macos,windows
     
     data = request.get_json();
     
@@ -49,6 +50,7 @@ def create_device():
         device_id=data.get('device_id'),
         project_id=project.project_id,
         name=data['name'],
+        platform=data['platform'].upper() ,
         model=data.get('model'),
         created_at=datetime.now(timezone.utc) 
     )
@@ -66,6 +68,7 @@ def get_devices():
         'project_id': d.project_id,
         'name': d.name,
         'model': d.model,
+        'platform':d.platform.value,
         'last_updated':d.last_updated
     } for d in devices])
 
@@ -78,6 +81,7 @@ def get_device(instance_id):
         'device_id': device.device_id,
         'project_id': device.project_id,
         'name': device.name,
+        'platform':device.platform.value,
         'model': device.model
     })
 
@@ -89,6 +93,7 @@ def update_device(instance_id):
     device.device_id = data.get('device_id', device.device_id)
     device.name = data.get('name', device.name)
     device.model = data.get('model', device.model)
+    device.platform = data.get('platform',device.platform)
     db.session.commit()
     return jsonify({'message': 'Device updated'})
 

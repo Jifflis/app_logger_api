@@ -25,7 +25,7 @@ def create_log():
         instance_id=device.instance_id,
         project_id=g.project_id,
         message=data['message'],
-        level=LogLevel[data['level']],
+        level=LogLevel[data.get('level').upper()],
         tag=data.get('tag'),
         actual_log_time=datetime.strptime(data['actual_log_time'], '%Y-%m-%d %H:%M:%S.%f'),
         created_at=datetime.now(timezone.utc)
