@@ -1,7 +1,8 @@
 import redis
 import json
+from app.config import Config
 
-r = redis.Redis(host='localhost', port=6379, db=0, decode_responses=True)
+r = redis.from_url(Config.REDIS_URL, decode_responses=True)
 
 def cache_token(token, user_id, project_id):
     """Cache token and user_id for 1 hour"""
