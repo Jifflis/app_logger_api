@@ -59,8 +59,8 @@ class Project(db.Model):
 class Device(db.Model):
     __tablename__ = "devices"
 
-    instance_id = db.Column(db.Integer, primary_key=True, autoincrement=False)
-    device_id = db.Column(db.Integer, nullable=True, index=True)
+    instance_id = db.Column(db.String(100), primary_key=True)
+    device_id = db.Column(db.String(100), nullable=True, index=True)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
     name = db.Column(db.String(100), index=True)
     model = db.Column(db.String(100))
@@ -83,7 +83,7 @@ class DeviceLog(db.Model):
 
     log_id = db.Column(db.Integer, primary_key=True)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
-    instance_id = db.Column(db.Integer, db.ForeignKey("devices.instance_id"), nullable=False, index=True)
+    instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False, index=True)
     message = db.Column(db.Text, nullable=False)
     level = db.Column(db.Enum(LogLevel), nullable=False, index=True)
     tag = db.Column(db.String(100), index=True)
@@ -101,7 +101,7 @@ class DeviceLog(db.Model):
 class DeviceTag(db.Model):
     __tablename__ = "device_tags"
 
-    instance_id = db.Column(db.Integer, db.ForeignKey("devices.instance_id"), nullable=False)
+    instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False)
     tag_name = db.Column(db.String(100), nullable=False)
     tag_value = db.Column(db.String(100), nullable=False)
     project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
@@ -133,7 +133,7 @@ class DeviceSession(db.Model):
     __tablename__ = "device_sessions"
 
     id = db.Column(db.Integer, primary_key=True)
-    instance_id = db.Column(db.Integer, db.ForeignKey("devices.instance_id"), nullable=False, index=True)
+    instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False, index=True)
     actual_log_time = db.Column(db.DateTime, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
