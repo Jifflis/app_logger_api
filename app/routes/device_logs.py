@@ -10,7 +10,6 @@ log_bp = Blueprint('device_logs', __name__)
 @log_bp.route('', methods=['POST'])
 @token_required
 def create_log():
-    #project_id
     #instance_id
     #message
     #level = INFO,WARNING,ERROR

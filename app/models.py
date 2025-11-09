@@ -18,6 +18,7 @@ class User(db.Model):
 
     user_id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(100), nullable=False, unique=True, index=True)
+    email = db.Column(db.String(100), nullable=False, unique=True, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
 
     # One user → many projects
