@@ -10,6 +10,13 @@ log_bp = Blueprint('device_logs', __name__)
 @log_bp.route('', methods=['POST'])
 @token_required
 def create_log():
+    #project_id
+    #instance_id
+    #message
+    #level = INFO,WARNING,ERROR
+    #tag
+    #actual_log_time
+    
     data = request.get_json()
     device = Device.query.get(data['instance_id'])
     project = Project.query.get(g.project_id)
@@ -21,7 +28,7 @@ def create_log():
         message=data['message'],
         level=LogLevel[data['level']],
         tag=data.get('tag'),
-        actual_log_time=datetime.strptime(data['actual_log_time'], '%Y-%m-%d %H:%M:%S'),
+        actual_log_time=datetime.strptime(data['actual_log_time'], '%Y-%m-%d %H:%M:%S.%f'),
         created_at=datetime.now(timezone.utc)
     )
     db.session.add(log)
@@ -44,6 +51,7 @@ def get_logs():
     } for l in logs])
 
 @log_bp.route('/<int:log_id>', methods=['PUT'])
+@token_required
 def update_log(log_id):
     log = DeviceLog.query.get_or_404(log_id)
     data = request.get_json()
@@ -54,6 +62,7 @@ def update_log(log_id):
     return jsonify({'message': 'Log updated'})
 
 @log_bp.route('/<int:log_id>', methods=['DELETE'])
+@token_required
 def delete_log(log_id):
     log = DeviceLog.query.get_or_404(log_id)
     db.session.delete(log)

@@ -12,7 +12,6 @@ def create_project():
     user = User.query.get(data['user_id'])
     if not user:
         return jsonify({'error': 'User not found'}), 404
-    
     try:
         project = Project(name=data['name'], user_id=user.user_id, created_at=datetime.now(timezone.utc))
     

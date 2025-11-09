@@ -14,6 +14,13 @@ device_bp = Blueprint('devices', __name__)
 @device_bp.route('/init',methods =['POST'])
 @token_required
 def initialize_device():
+    #instance_id
+    #project_id
+    #actual_log_time
+    #model
+    #device_id
+    #name
+    
     data = request.get_json();
     
     if not data:
@@ -31,6 +38,7 @@ def initialize_device():
 
 
 @device_bp.route('', methods=['POST'])
+@token_required
 def create_device():
     data = request.get_json()
     project = Project.query.get(data['project_id'])
@@ -50,11 +58,7 @@ def create_device():
 
 @device_bp.route('', methods=['GET'])
 @token_required
-def get_devices():
-    
-    print('user id',g.user_id);
-    print('project id',g.project_id);
-    
+def get_devices():   
     devices = Device.query.all()
     return jsonify([{
         'instance_id': d.instance_id,
@@ -78,6 +82,7 @@ def get_device(instance_id):
     })
 
 @device_bp.route('/<int:instance_id>', methods=['PUT'])
+@token_required
 def update_device(instance_id):
     device = Device.query.get_or_404(instance_id)
     data = request.get_json()
@@ -88,6 +93,7 @@ def update_device(instance_id):
     return jsonify({'message': 'Device updated'})
 
 @device_bp.route('/<int:instance_id>', methods=['DELETE'])
+@token_required
 def delete_device(instance_id):
     device = Device.query.get_or_404(instance_id)
     db.session.delete(device)
