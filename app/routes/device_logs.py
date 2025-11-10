@@ -27,7 +27,7 @@ def create_log():
         message=data['message'],
         level=LogLevel[data.get('level').upper()],
         tag=data.get('tag'),
-        actual_log_time=datetime.strptime(data['actual_log_time'], '%Y-%m-%d %H:%M:%S.%f'),
+        actual_log_time=data.get('actual_log_time'),
         created_at=datetime.now(timezone.utc)
     )
     db.session.add(log)
