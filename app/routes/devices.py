@@ -1,8 +1,9 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Device, Project
-from datetime import datetime,timezone
+from app.models import Device, Project, DeviceLog, Platform
+from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
+from sqlalchemy import func, and_
 from app.middleware.auth import token_required
 from flask import g
 from app.services.devices_services import save_or_update_device
@@ -60,17 +61,121 @@ def create_device():
 
 @device_bp.route('', methods=['GET'])
 @token_required
-def get_devices():   
-    devices = Device.query.all()
-    return jsonify([{
-        'instance_id': d.instance_id,
-        'device_id': d.device_id,
-        'project_id': d.project_id,
-        'name': d.name,
-        'model': d.model,
-        'platform':d.platform.value,
-        'last_updated':d.last_updated
-    } for d in devices])
+def get_devices():
+    """
+    Fetch devices for a given project.
+    Optional filters:
+      - date (YYYY-MM-DD): filter by last_updated and logs on that date
+      - platform: filter by platform
+      - page, per_page: pagination
+    Example:
+      GET /devices?project_id=1&date=2025-11-10&platform=ios&page=1&per_page=20
+    """
+    # --- 1️⃣ Parse query params ---
+    project_id = g.project_id
+    date_str = request.args.get("date")
+    platform_str = request.args.get("platform")
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 20))
+
+    if not project_id:
+        return jsonify({"error": "Missing required parameter: project_id"}), 400
+
+    # --- 2️⃣ Date handling ---
+    start_dt, end_dt = None, None
+    if date_str:
+        try:
+            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            start_dt = date_obj
+            end_dt = date_obj + timedelta(days=1)
+        except ValueError:
+            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    # --- 3️⃣ Base query ---
+    query = (
+        db.session.query(
+            Device.instance_id,
+            Device.device_id,
+            Device.project_id,
+            Device.name,
+            Device.model,
+            Device.platform,
+            Device.created_at,
+            Device.last_updated,
+            func.count(DeviceLog.log_id).label("total_logs"),
+        )
+        .outerjoin(
+            DeviceLog,
+            and_(
+                DeviceLog.instance_id == Device.instance_id,
+                True if not start_dt else and_(
+                    DeviceLog.actual_log_time >= start_dt,
+                    DeviceLog.actual_log_time < end_dt,
+                )
+            )
+        )
+        .filter(Device.project_id == project_id)
+        .group_by(
+            Device.instance_id,
+            Device.device_id,
+            Device.project_id,
+            Device.name,
+            Device.model,
+            Device.platform,
+            Device.created_at,
+            Device.last_updated,
+        )
+        .order_by(Device.last_updated.desc())
+    )
+
+    # --- 4️⃣ Optional date filter on device.last_updated ---
+    if start_dt:
+        query = query.filter(Device.last_updated >= start_dt, Device.last_updated < end_dt)
+
+    # --- 5️⃣ Optional platform filter ---
+    if platform_str:
+        try:
+            platform_enum = Platform(platform_str.lower())
+            query = query.filter(Device.platform == platform_enum)
+        except ValueError:
+            return jsonify({"error": f"Invalid platform: {platform_str}"}), 400
+
+    # --- 6️⃣ Pagination ---
+    total_items = query.count()
+    devices = query.offset((page - 1) * per_page).limit(per_page).all()
+    total_pages = (total_items + per_page - 1) // per_page
+
+    # --- 7️⃣ Response ---
+    devices_data = [
+        {
+            "instance_id": d.instance_id,
+            "device_id": d.device_id,
+            "project_id": d.project_id,
+            "name": d.name,
+            "model": d.model,
+            "platform": d.platform.value if d.platform else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "last_updated": d.last_updated.isoformat() if d.last_updated else None,
+            "total_logs": int(d.total_logs or 0),
+        }
+        for d in devices
+    ]
+
+    return jsonify({
+        "devices": devices_data,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "total_items": total_items,
+        },
+        "filters": {
+            "project_id": project_id,
+            "date": date_str,
+            "platform": platform_str,
+        },
+    })
+
 
 @device_bp.route('/<int:instance_id>', methods=['GET'])
 @token_required
