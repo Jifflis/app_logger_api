@@ -12,25 +12,46 @@ log_bp = Blueprint('device_logs', __name__)
 @token_required
 def get_logs_summary():
     """
-    Return per-platform summary for a given project and date:
+    Return per-platform summary for a given project and date range:
       - total_devices (based on last_updated date)
-      - total_logs (based on logs created that day)
+      - total_logs (based on logs created within the range)
+
+    Query params:
+      - project_id (from g.project_id)
+      - start (optional): ISO8601 UTC datetime string, e.g. "2025-11-12T00:00:00Z"
+      - end (optional): ISO8601 UTC datetime string, e.g. "2025-11-13T00:00:00Z"
+
+    Sample Request
+      - GET /api/logs_summary?start=2025-11-12T00:00:00Z&end=2025-11-13T00:00:00Z
+      - GET /api/logs_summary
+      
+    If start or end are missing, defaults to today UTC (00:00:00 to 23:59:59).
     """
 
     project_id = g.project_id
-    date_str = request.args.get("date")
+    start_str = request.args.get("start")
+    end_str = request.args.get("end")
 
+    # Validate project_id
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
-    if not date_str:
-        return jsonify({"error": "Missing required parameter: date"}), 400
 
+    # Determine start and end datetimes
     try:
-        date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-        start_dt = date_obj
-        end_dt = date_obj + timedelta(days=1)
+        if start_str and end_str:
+            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        else:
+            # Default to today UTC
+            today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_dt = today_utc
+            end_dt = today_utc + timedelta(days=1)
+            start_str = start_dt.isoformat().replace("+00:00", "Z")
+            end_str = end_dt.isoformat().replace("+00:00", "Z")
     except ValueError:
-        return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+        return jsonify({
+            "error": "Invalid datetime format. Use ISO 8601 UTC, e.g. 2025-11-12T00:00:00Z"
+        }), 400
 
     # ---- Query 1: Count devices by platform ---
     devices_query = (
@@ -45,10 +66,9 @@ def get_logs_summary():
         )
         .group_by(Device.platform)
     )
-
     device_results = {row.platform: row.total_devices for row in devices_query.all()}
 
-    # ---- Query 2: Count logs by platform (device join needed) ---
+    # ---- Query 2: Count logs by platform ---
     logs_query = (
         db.session.query(
             Device.platform.label("platform"),
@@ -62,10 +82,9 @@ def get_logs_summary():
         )
         .group_by(Device.platform)
     )
-
     log_results = {row.platform: row.total_logs for row in logs_query.all()}
 
-    # ---- Build response and ensure missing platforms appear with 0 ----
+    # ---- Build response and ensure all platforms are included ----
     summary = []
     for p in Platform:
         summary.append({
@@ -78,7 +97,8 @@ def get_logs_summary():
 
     return jsonify({
         "project_id": project_id,
-        "date": date_str,
+        "start": start_str,
+        "end": end_str,
         "summary": summary,
     })
 
