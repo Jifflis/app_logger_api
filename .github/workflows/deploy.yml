@@ -22,7 +22,7 @@ jobs:
         run: |
           ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
             cd /root/srv1097127/development/app_logger/live
-            git pull
+            git pull origin dev
             source venv/bin/activate
             pip install -r requirements.txt
             sudo systemctl restart gunicorn.service
