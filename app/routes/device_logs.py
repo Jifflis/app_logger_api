@@ -12,10 +12,11 @@ log_bp = Blueprint('device_logs', __name__)
 @token_required
 def get_logs_summary():
     """
-    Get total log counts grouped by platform for a given project and date.
-    Example:
-      GET /logs/summary?project_id=1&date=2025-11-10
+    Return per-platform summary for a given project and date:
+      - total_devices (based on last_updated date)
+      - total_logs (based on logs created that day)
     """
+
     project_id = g.project_id
     date_str = request.args.get("date")
 
@@ -31,10 +32,26 @@ def get_logs_summary():
     except ValueError:
         return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
 
-    # --- Query logs joined with device to get platform ---
-    query = (
+    # ---- Query 1: Count devices by platform ---
+    devices_query = (
         db.session.query(
-            Device.platform,
+            Device.platform.label("platform"),
+            func.count(Device.instance_id).label("total_devices"),
+        )
+        .filter(
+            Device.project_id == project_id,
+            Device.last_updated >= start_dt,
+            Device.last_updated < end_dt,
+        )
+        .group_by(Device.platform)
+    )
+
+    device_results = {row.platform: row.total_devices for row in devices_query.all()}
+
+    # ---- Query 2: Count logs by platform (device join needed) ---
+    logs_query = (
+        db.session.query(
+            Device.platform.label("platform"),
             func.count(DeviceLog.log_id).label("total_logs"),
         )
         .join(Device, Device.instance_id == DeviceLog.instance_id)
@@ -44,21 +61,18 @@ def get_logs_summary():
             DeviceLog.actual_log_time < end_dt,
         )
         .group_by(Device.platform)
-        .order_by(Device.platform.asc())
     )
 
-    results = query.all()
+    log_results = {row.platform: row.total_logs for row in logs_query.all()}
 
-    summary = [
-        {"platform": p.value if p else "unknown", "total_logs": int(c)}
-        for p, c in results
-    ]
-
-    # Include missing platforms (zero logs)
-    existing = {s["platform"] for s in summary}
+    # ---- Build response and ensure missing platforms appear with 0 ----
+    summary = []
     for p in Platform:
-        if p.value not in existing:
-            summary.append({"platform": p.value, "total_logs": 0})
+        summary.append({
+            "platform": p.value,
+            "total_devices": int(device_results.get(p, 0)),
+            "total_logs": int(log_results.get(p, 0)),
+        })
 
     summary.sort(key=lambda x: x["platform"])
 

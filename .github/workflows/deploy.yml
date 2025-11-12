@@ -1,4 +1,4 @@
-name: Deploy to VPS
+name: Deploy to VPS Development
 
 on:
   push:
@@ -20,10 +20,11 @@ jobs:
 
       - name: Deploy via SSH to VPS
         run: |
-          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} "
-            cd /root/srv1097127/development/app_logger/live &&
-            git pull &&
-            source venv/bin/activate &&
-            pip install -r requirements.txt &&
+          ssh -o StrictHostKeyChecking=no ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} << 'EOF'
+            cd /root/srv1097127/development/app_logger/live
+            git fetch origin dev
+            git reset --hard origin/dev
+            source venv/bin/activate
+            pip install -r requirements.txt
             sudo systemctl restart gunicorn.service
-          "
+          EOF
