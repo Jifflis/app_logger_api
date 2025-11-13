@@ -65,15 +65,17 @@ def get_devices():
     """
     Fetch devices for a given project.
     Optional filters:
-      - date (YYYY-MM-DD): filter by last_updated and logs on that date
+      - start (optional): ISO8601 UTC datetime string, e.g. "2025-11-12T00:00:00Z"
+      - end (optional): ISO8601 UTC datetime string, e.g. "2025-11-13T00:00:00Z"
       - platform: filter by platform
       - page, per_page: pagination
     Example:
       GET /devices?project_id=1&date=2025-11-10&platform=ios&page=1&per_page=20
     """
-    # --- 1️⃣ Parse query params ---
+    # --- Parse query params ---
     project_id = g.project_id
-    date_str = request.args.get("date")
+    start_str = request.args.get("start")
+    end_str = request.args.get("end")
     platform_str = request.args.get("platform")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
@@ -81,17 +83,24 @@ def get_devices():
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # --- 2️⃣ Date handling ---
-    start_dt, end_dt = None, None
-    if date_str:
-        try:
-            date_obj = datetime.strptime(date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
-            start_dt = date_obj
-            end_dt = date_obj + timedelta(days=1)
-        except ValueError:
-            return jsonify({"error": "Invalid date format. Use YYYY-MM-DD."}), 400
+    # Determine start and end datetimes
+    try:
+        if start_str and end_str:
+            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        else:
+            # Default to today UTC
+            today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_dt = today_utc
+            end_dt = today_utc + timedelta(days=1)
+            start_str = start_dt.isoformat().replace("+00:00", "Z")
+            end_str = end_dt.isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return jsonify({
+            "error": "Invalid datetime format. Use ISO 8601 UTC, e.g. 2025-11-12T00:00:00Z"
+        }), 400
 
-    # --- 3️⃣ Base query ---
+    # --- Base query ---
     query = (
         db.session.query(
             Device.instance_id,
@@ -128,11 +137,11 @@ def get_devices():
         .order_by(Device.last_updated.desc())
     )
 
-    # --- 4️⃣ Optional date filter on device.last_updated ---
-    if start_dt:
-        query = query.filter(Device.last_updated >= start_dt, Device.last_updated < end_dt)
+    # --- Date filter on device.last_updated ---
+    query = query.filter(Device.last_updated >= start_dt, Device.last_updated < end_dt)
+        
 
-    # --- 5️⃣ Optional platform filter ---
+    # --- Optional platform filter ---
     if platform_str:
         try:
             platform_enum = Platform(platform_str.lower())
@@ -140,12 +149,12 @@ def get_devices():
         except ValueError:
             return jsonify({"error": f"Invalid platform: {platform_str}"}), 400
 
-    # --- 6️⃣ Pagination ---
+    # --- Pagination ---
     total_items = query.count()
     devices = query.offset((page - 1) * per_page).limit(per_page).all()
     total_pages = (total_items + per_page - 1) // per_page
 
-    # --- 7️⃣ Response ---
+    # --- Response ---
     devices_data = [
         {
             "instance_id": d.instance_id,
@@ -171,7 +180,8 @@ def get_devices():
         },
         "filters": {
             "project_id": project_id,
-            "date": date_str,
+            "start": start_str,
+            "end":end_str,
             "platform": platform_str,
         },
     })
