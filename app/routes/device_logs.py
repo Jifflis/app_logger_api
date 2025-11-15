@@ -300,7 +300,7 @@ def get_logs_by_instance():
             "instance_id": log.instance_id,
             "project_id": project_id,
             "level": log.level.value if log.level else None,
-            "tag": log.log_tag.tag,
+            "tag": getattr(log.log_tag, "tag", None),
             "message": log.message,
             "actual_log_time": log.actual_log_time.isoformat() if log.actual_log_time else None,
             "created_at": log.created_at.isoformat() if log.created_at else None,
