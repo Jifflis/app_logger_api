@@ -70,7 +70,7 @@ def get_devices():
       - platform: filter by platform
       - page, per_page: pagination
     Example:
-      GET /devices?project_id=1&date=2025-11-10&platform=ios&page=1&per_page=20
+      GET /devices?platform=ios&page=1&per_page=20&start=2025-11-12T00:00:00Z&end=2025-11-13T00:00:00Z
     """
     # --- Parse query params ---
     project_id = g.project_id

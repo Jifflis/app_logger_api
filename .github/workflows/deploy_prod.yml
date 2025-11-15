@@ -34,6 +34,9 @@ jobs:
           echo "--- Installing dependencies ---"
           pip install -r requirements.txt
 
+          echo "--- Running database migrations ---"
+          flask db upgrade
+
           echo "--- Restarting Redis ---"
           if systemctl list-units --type=service | grep -q redis; then
             sudo systemctl restart redis
