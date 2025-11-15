@@ -2,12 +2,115 @@ from flask import Blueprint, request, jsonify,g
 from sqlalchemy.exc import IntegrityError
 from app import db
 from sqlalchemy import func, desc, and_
-from app.models import DeviceLog, Device, Project, LogLevel,Platform
+from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
 
 log_bp = Blueprint('device_logs', __name__)
 
+@log_bp.route('/log_tag',methods=['GET'])
+@token_required
+def get_device_with_log_tag():
+    project_id = g.project_id
+    log_tag_id = request.args.get('log_tag_id')
+    start_str = request.args.get('start')
+    end_str = request.args.get('end')
+    page = int(request.args.get("page", 1))
+    per_page = int(request.args.get("per_page", 20))
+    
+    # Validate log_tag
+    log_tag = LogTag.query.get(log_tag_id)
+    if not log_tag or log_tag.project_id != project_id:
+        return jsonify({"error": "Tag not found"}), 400
+
+    # Determine date range
+    try:
+        if start_str and end_str:
+            start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+            end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+        else:
+            today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_dt = today_utc
+            end_dt = today_utc + timedelta(days=1)
+            start_str = start_dt.isoformat().replace("+00:00", "Z")
+            end_str = end_dt.isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return jsonify({"error": "Invalid datetime format. Use ISO8601 UTC"}), 400
+
+    latest_log_time = func.max(DeviceLog.actual_log_time).label("latest_log")
+
+    device_query = (
+        db.session.query(
+            Device.instance_id,
+            Device.device_id,
+            Device.project_id,
+            Device.name,
+            Device.model,
+            Device.platform,
+            Device.created_at,
+            Device.last_updated,
+            func.count(DeviceLog.log_id).label("total_logs"),
+            latest_log_time
+        )
+        .join(DeviceLog, DeviceLog.instance_id == Device.instance_id)
+        .filter(
+            Device.project_id == project_id,
+            DeviceLog.log_tag_id == log_tag_id,
+            DeviceLog.actual_log_time >= start_dt,
+            DeviceLog.actual_log_time < end_dt
+        )
+        .group_by(
+            Device.instance_id,
+            Device.device_id,
+            Device.project_id,
+            Device.name,
+            Device.model,
+            Device.platform,
+            Device.created_at,
+            Device.last_updated,
+        )
+        .order_by(desc(latest_log_time))
+    )
+
+    total_items = device_query.count()
+    logs = device_query.offset((page - 1) * per_page).limit(per_page).all()
+    total_pages = (total_items + per_page - 1) // per_page
+
+    device_str = [
+        {
+            "instance_id": d.instance_id,
+            "device_id": d.device_id,
+            "project_id": d.project_id,
+            "name": d.name,
+            "model": d.model,
+            "platform": d.platform.value if d.platform else None,
+            "created_at": d.created_at.isoformat() if d.created_at else None,
+            "last_updated": d.last_updated.isoformat() if d.last_updated else None,
+            "total_logs": int(d.total_logs or 0),
+            "latest_log": d.latest_log.isoformat() if d.latest_log else None,
+        }
+        for d in logs
+    ]
+
+    return jsonify({
+        "devices": device_str,
+        "pagination": {
+            "page": page,
+            "per_page": per_page,
+            "total_pages": total_pages,
+            "total_items": total_items,
+        },
+        "filters": {
+            "project_id": project_id,
+            "start_date": start_str,
+            "end_date": end_str,
+            "log_tag_id": log_tag_id,
+        }
+    })
+
+    
+    
+    
 @log_bp.route('/summary', methods=['GET'])
 @token_required
 def get_logs_summary():
@@ -197,7 +300,7 @@ def get_logs_by_instance():
             "instance_id": log.instance_id,
             "project_id": project_id,
             "level": log.level.value if log.level else None,
-            "tag": log.tag,
+            "tag": log.log_tag.tag,
             "message": log.message,
             "actual_log_time": log.actual_log_time.isoformat() if log.actual_log_time else None,
             "created_at": log.created_at.isoformat() if log.created_at else None,
@@ -227,29 +330,43 @@ def get_logs_by_instance():
 @log_bp.route('', methods=['POST'])
 @token_required
 def create_log():
-    #instance_id
-    #message
-    #level = INFO,WARNING,ERROR
-    #tag
-    #actual_log_time
-    
+    # instance_id
+    # message
+    # level = INFO, WARNING, ERROR
+    # tag
+    # actual_log_time
+
     data = request.get_json()
     device = Device.query.get(data['instance_id'])
     project = Project.query.get(g.project_id)
     if not device or not project:
         return jsonify({'error': 'Device or Project not found'}), 404
+
+    # handle log tag
+    tag_name = data.get('tag')
+    log_tag_id = None
+    if tag_name:
+        log_tag = LogTag.query.filter_by(project_id=g.project_id, tag=tag_name).first()
+        if not log_tag:
+            log_tag = LogTag(tag=tag_name, project_id=g.project_id)
+            db.session.add(log_tag)
+            db.session.flush()  # assign id without committing
+        log_tag_id = log_tag.id
+
     log = DeviceLog(
         instance_id=device.instance_id,
         project_id=g.project_id,
         message=data['message'],
-        level=LogLevel[data.get('level').upper()],
-        tag=data.get('tag'),
+        level=LogLevel[data.get('level', 'INFO').upper()],
+        log_tag_id=log_tag_id,
         actual_log_time=data.get('actual_log_time'),
         created_at=datetime.now(timezone.utc)
     )
+
     db.session.add(log)
     db.session.commit()
     return jsonify({'message': 'Log created', 'log_id': log.log_id}), 201
+
 
 @log_bp.route('', methods=['GET'])
 @token_required
@@ -261,7 +378,7 @@ def get_logs():
         'instance_id': l.instance_id,
         'message': l.message,
         'level': l.level.name,
-        'tag': l.tag,
+        'tag': l.log_tag.tag,
         'actual_log_time': l.actual_log_time,
         'created_at': l.created_at
     } for l in logs])

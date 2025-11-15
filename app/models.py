@@ -50,6 +50,7 @@ class Project(db.Model):
     logs = db.relationship("DeviceLog", back_populates="project", cascade="all, delete-orphan")
     tags = db.relationship("DeviceTag", back_populates="project", cascade="all, delete-orphan")
     tokens = db.relationship("Token", back_populates="project", cascade="all, delete-orphan")
+    logTags =db.relationship("LogTag", back_populates="project", cascade="all, delete-orphan")
     
       # enforce unique project name per user
     __table_args__ = (
@@ -86,12 +87,13 @@ class DeviceLog(db.Model):
     instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False, index=True)
     message = db.Column(db.Text, nullable=False)
     level = db.Column(db.Enum(LogLevel), nullable=False, index=True)
-    tag = db.Column(db.String(100), index=True)
+    log_tag_id = db.Column(db.Integer, db.ForeignKey("log_tags.id"), index=True, nullable=True)
     actual_log_time = db.Column(db.DateTime, nullable=False, index=True)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
 
     project = db.relationship("Project", back_populates="logs")
     device = db.relationship("Device", back_populates="logs")
+    log_tag = db.relationship("LogTag", back_populates="device_logs")
 
     __table_args__ = (
         db.Index("idx_project_instance_time", "project_id", "instance_id", "actual_log_time"),
@@ -144,4 +146,16 @@ class DeviceSession(db.Model):
     )
 
 
-    
+class LogTag(db.Model):
+    __tablename__ = "log_tags"
+
+    id = db.Column(db.Integer, primary_key=True)
+    tag = db.Column(db.String(100), nullable=False)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("tag", "project_id", name="uq_tag_per_project"),
+    )
+
+    project = db.relationship("Project", back_populates="logTags")
+    device_logs = db.relationship("DeviceLog", back_populates="log_tag")

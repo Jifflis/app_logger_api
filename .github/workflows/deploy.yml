@@ -26,5 +26,7 @@ jobs:
             git reset --hard origin/dev
             source venv/bin/activate
             pip install -r requirements.txt
+            echo "--- Running database migrations ---"
+            flask db upgrade
             sudo systemctl restart gunicorn.service
           EOF
