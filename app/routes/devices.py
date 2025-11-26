@@ -16,7 +16,6 @@ device_bp = Blueprint('devices', __name__)
 @token_required
 def initialize_device():
     #instance_id
-    #project_id
     #actual_log_time
     #model
     #device_id
