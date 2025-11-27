@@ -8,6 +8,7 @@ from app.middleware.auth import token_required
 from flask import g
 from app.services.devices_services import save_or_update_device
 from app.services.device_sessions_services import save_session
+from app.utils.date_util import to_iso_utc
 
 device_bp = Blueprint('devices', __name__)
 
@@ -162,8 +163,8 @@ def get_devices():
             "name": d.name,
             "model": d.model,
             "platform": d.platform.value if d.platform else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
-            "last_updated": d.last_updated.isoformat() if d.last_updated else None,
+            "created_at": to_iso_utc(d.created_at),
+            "last_updated": to_iso_utc(d.last_updated),
             "total_logs": int(d.total_logs or 0),
         }
         for d in devices

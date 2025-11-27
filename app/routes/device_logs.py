@@ -5,6 +5,7 @@ from sqlalchemy import func, desc, and_
 from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
+from app.utils.date_util import to_iso_utc
 
 log_bp = Blueprint('device_logs', __name__)
 
@@ -84,8 +85,8 @@ def get_device_with_log_tag():
             "name": d.name,
             "model": d.model,
             "platform": d.platform.value if d.platform else None,
-            "created_at": d.created_at.isoformat() if d.created_at else None,
-            "last_updated": d.last_updated.isoformat() if d.last_updated else None,
+            "created_at": to_iso_utc(d.created_at),
+            "last_updated": to_iso_utc(d.last_updated),
             "total_logs": int(d.total_logs or 0),
             "latest_log": d.latest_log.isoformat() if d.latest_log else None,
         }
@@ -294,7 +295,7 @@ def get_logs_by_instance():
             "name": device.name,
             "model": device.model,
             "platform": device.platform.value if device.platform else "unknown",
-            "last_updated": device.last_updated.isoformat() if device.last_updated else None
+            "last_updated": to_iso_utc(device.last_updated)
         }
 
     # --- 8️⃣ Serialize logs ---
@@ -306,8 +307,8 @@ def get_logs_by_instance():
             "level": log.level.value if log.level else None,
             "tag": getattr(log.log_tag, "tag", None),
             "message": log.message,
-            "actual_log_time": log.actual_log_time.isoformat() if log.actual_log_time else None,
-            "created_at": log.created_at.isoformat() if log.created_at else None,
+            "actual_log_time": to_iso_utc(log.actual_log_time),
+            "created_at": to_iso_utc(log.created_at),
         }
         for log in logs
     ]
@@ -384,8 +385,8 @@ def get_logs():
         'message': l.message,
         'level': l.level.name,
         'tag': l.log_tag.tag,
-        'actual_log_time': l.actual_log_time,
-        'created_at': l.created_at
+        'actual_log_time': to_iso_utc(l.actual_log_time),
+        'created_at': to_iso_utc(l.created_at)
     } for l in logs])
 
 @log_bp.route('/<int:log_id>', methods=['PUT'])
