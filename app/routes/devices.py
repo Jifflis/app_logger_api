@@ -118,7 +118,7 @@ def get_devices():
             total_logs,
             total_sessions,
         )
-            .outerjoin(
+        .outerjoin(
             DeviceLog,
             and_(
                 DeviceLog.instance_id == Device.instance_id,
@@ -133,14 +133,6 @@ def get_devices():
                 DeviceSession.actual_log_time >= start_dt,
                 DeviceSession.actual_log_time <= end_dt,
             )
-        )
-            .outerjoin(
-                DeviceSession,
-                and_(
-                    DeviceSession.instance_id == Device.instance_id,
-                    DeviceSession.actual_log_time >= start_dt,
-                    DeviceSession.actual_log_time <= end_dt
-                )
         )
         .filter(Device.project_id == project_id)
         .group_by(
