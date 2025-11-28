@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Device, Project, DeviceLog, Platform
+from app.models import Device, Project, DeviceLog, Platform, DeviceSession
 from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import func, and_
@@ -111,17 +111,24 @@ def get_devices():
             Device.platform,
             Device.created_at,
             Device.last_updated,
-            func.count(DeviceLog.log_id).label("total_logs"),
+            func.count(func.distinct(DeviceLog.log_id)).label("total_logs"),
+            func.count(func.distinct(DeviceSession.id)).label("total_sessions"),
         )
-        .outerjoin(
+            .outerjoin(
             DeviceLog,
             and_(
                 DeviceLog.instance_id == Device.instance_id,
-                True if not start_dt else and_(
-                    DeviceLog.actual_log_time >= start_dt,
-                    DeviceLog.actual_log_time < end_dt,
-                )
+                DeviceLog.actual_log_time >= start_dt,
+                DeviceLog.actual_log_time <= end_dt
             )
+        )
+            .outerjoin(
+                DeviceSession,
+                and_(
+                    DeviceSession.instance_id == Device.instance_id,
+                    DeviceSession.actual_log_time >= start_dt,
+                    DeviceSession.actual_log_time <= end_dt
+                )
         )
         .filter(Device.project_id == project_id)
         .group_by(
@@ -134,11 +141,9 @@ def get_devices():
             Device.created_at,
             Device.last_updated,
         )
+        .having(func.count(DeviceSession.id) > 0)
         .order_by(Device.last_updated.desc())
     )
-
-    # --- Date filter on device.last_updated ---
-    query = query.filter(Device.last_updated >= start_dt, Device.last_updated < end_dt)
         
 
     # --- Optional platform filter ---
@@ -166,6 +171,7 @@ def get_devices():
             "created_at": to_iso_utc(d.created_at),
             "last_updated": to_iso_utc(d.last_updated),
             "total_logs": int(d.total_logs or 0),
+            "total_sessions": int(d.total_sessions or 0),
         }
         for d in devices
     ]
