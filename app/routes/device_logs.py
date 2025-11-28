@@ -417,22 +417,3 @@ def delete_log(log_id):
     db.session.delete(log)
     db.session.commit()
     return jsonify({'message': 'Log deleted'})
-
-
-# SELECT devices.name, COUNT(DISTINCT device_logs.log_id) AS total_logs, COUNT(DISTINCT device_sessions.id) AS total_sessions FROM devices LEFT JOIN device_logs ON device_logs.instance_id = devices.instance_id LEFT JOIN device_sessions ON device_sessions.instance_id = devices.instance_id where device_sessions.actual_log_time >= "2025-11-12T00:00:00Z" && device_sessions.actual_log_time <= "2025-11-06T00:00:00Z" GROUP BY devices.instance_id;
-# SELECT 
-#     d.instance_id, 
-#     COUNT(DISTINCT l.log_id) AS total_logs, 
-#     COUNT(DISTINCT s.id) AS total_sessions
-# FROM devices d
-# LEFT JOIN device_logs l
-#     ON l.instance_id = d.instance_id
-#         AND l.actual_log_time >= '2025-11-01T00:00:00Z'
-#        AND l.actual_log_time <= '2025-11-08T00:00:00Z'
-# LEFT JOIN device_sessions s
-#     ON s.instance_id = d.instance_id
-#        AND s.actual_log_time >= '2025-11-01T00:00:00Z'
-#        AND s.actual_log_time <= '2025-11-08T00:00:00Z'
-#  where d.project_id =   1     and d.last_updated >= '2025-11-01T00:00:00Z' and d.last_updated <= '2025-11-08T00:00:00Z'
-# GROUP BY d.instance_id
-# order by d.last_updated desc;
