@@ -79,6 +79,7 @@ def get_devices():
     platform_str = request.args.get("platform")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
+    order = request.args.get("order", "most_recent") #most_recent, total_logs_desc, total_logs_asc, total_sessions_desc, total_sessions_asc
 
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
@@ -101,6 +102,9 @@ def get_devices():
         }), 400
 
     # --- Base query ---
+    total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
+    total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
+
     query = (
         db.session.query(
             Device.instance_id,
@@ -111,24 +115,24 @@ def get_devices():
             Device.platform,
             Device.created_at,
             Device.last_updated,
-            func.count(func.distinct(DeviceLog.log_id)).label("total_logs"),
-            func.count(func.distinct(DeviceSession.id)).label("total_sessions"),
+            total_logs,
+            total_sessions,
         )
-            .outerjoin(
+        .outerjoin(
             DeviceLog,
             and_(
                 DeviceLog.instance_id == Device.instance_id,
                 DeviceLog.actual_log_time >= start_dt,
-                DeviceLog.actual_log_time <= end_dt
+                DeviceLog.actual_log_time <= end_dt,
             )
         )
-            .outerjoin(
-                DeviceSession,
-                and_(
-                    DeviceSession.instance_id == Device.instance_id,
-                    DeviceSession.actual_log_time >= start_dt,
-                    DeviceSession.actual_log_time <= end_dt
-                )
+        .outerjoin(
+            DeviceSession,
+            and_(
+                DeviceSession.instance_id == Device.instance_id,
+                DeviceSession.actual_log_time >= start_dt,
+                DeviceSession.actual_log_time <= end_dt,
+            )
         )
         .filter(Device.project_id == project_id)
         .group_by(
@@ -141,10 +145,20 @@ def get_devices():
             Device.created_at,
             Device.last_updated,
         )
-        .having(func.count(DeviceSession.id) > 0)
-        .order_by(Device.last_updated.desc())
+        .having(total_sessions > 0)
     )
-        
+
+    # Ordering
+    if order == "most_recent":
+        query = query.order_by(Device.last_updated.desc())
+    elif order == "total_logs_desc":
+        query = query.order_by(total_logs.desc())
+    elif order == "total_logs_asc":
+        query = query.order_by(total_logs.asc())
+    elif order == "total_sessions_desc":
+        query = query.order_by(total_sessions.desc())
+    elif order == "total_sessions_asc":
+        query = query.order_by(total_sessions.asc())    
 
     # --- Optional platform filter ---
     if platform_str:
