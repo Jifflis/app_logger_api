@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify,g
 from sqlalchemy.exc import IntegrityError
 from app import db
-from sqlalchemy import func, desc, and_
+from sqlalchemy import func, desc, and_, asc
 from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
@@ -18,6 +18,7 @@ def get_device_with_log_tag():
     end_str = request.args.get('end')
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
+    order = request.args.get("order", "most_recent") #most_recent,total_logs_asc, total_logs_desc
     
     # Validate log_tag
     log_tag = LogTag.query.get(log_tag_id)
@@ -38,7 +39,9 @@ def get_device_with_log_tag():
     except ValueError:
         return jsonify({"error": "Invalid datetime format. Use ISO8601 UTC"}), 400
 
+
     latest_log_time = func.max(DeviceLog.actual_log_time).label("latest_log")
+    total_logs = func.count(DeviceLog.log_id).label("total_logs")
 
     device_query = (
         db.session.query(
@@ -50,7 +53,7 @@ def get_device_with_log_tag():
             Device.platform,
             Device.created_at,
             Device.last_updated,
-            func.count(DeviceLog.log_id).label("total_logs"),
+            total_logs,
             latest_log_time
         )
         .join(DeviceLog, DeviceLog.instance_id == Device.instance_id)
@@ -70,8 +73,15 @@ def get_device_with_log_tag():
             Device.created_at,
             Device.last_updated,
         )
-        .order_by(desc(latest_log_time))
     )
+    
+    if order == "most_recent":
+        device_query = device_query.order_by(desc(latest_log_time))
+    elif order == "total_logs_desc":
+        device_query = device_query.order_by(desc(total_logs))
+    elif order == "total_logs_asc":
+        device_query = device_query.order_by(asc(total_logs))    
+    
 
     total_items = device_query.count()
     logs = device_query.offset((page - 1) * per_page).limit(per_page).all()
@@ -407,22 +417,3 @@ def delete_log(log_id):
     db.session.delete(log)
     db.session.commit()
     return jsonify({'message': 'Log deleted'})
-
-
-# SELECT devices.name, COUNT(DISTINCT device_logs.log_id) AS total_logs, COUNT(DISTINCT device_sessions.id) AS total_sessions FROM devices LEFT JOIN device_logs ON device_logs.instance_id = devices.instance_id LEFT JOIN device_sessions ON device_sessions.instance_id = devices.instance_id where device_sessions.actual_log_time >= "2025-11-12T00:00:00Z" && device_sessions.actual_log_time <= "2025-11-06T00:00:00Z" GROUP BY devices.instance_id;
-# SELECT 
-#     d.instance_id, 
-#     COUNT(DISTINCT l.log_id) AS total_logs, 
-#     COUNT(DISTINCT s.id) AS total_sessions
-# FROM devices d
-# LEFT JOIN device_logs l
-#     ON l.instance_id = d.instance_id
-#         AND l.actual_log_time >= '2025-11-01T00:00:00Z'
-#        AND l.actual_log_time <= '2025-11-06T00:00:00Z'
-# LEFT JOIN device_sessions s
-#     ON s.instance_id = d.instance_id
-#        AND s.actual_log_time >= '2025-11-01T00:00:00Z'
-#        AND s.actual_log_time <= '2025-11-06T00:00:00Z'
-#  where d.project_id =   1     and d.last_updated >= '2025-11-01T00:00:00Z' and d.last_updated <= '2025-11-06T00:00:00Z'
-# GROUP BY d.instance_id
-# order by d.last_updated desc;
