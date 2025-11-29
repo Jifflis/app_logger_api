@@ -104,7 +104,6 @@ def get_devices():
     # --- Base query ---
     total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
     total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
-   
     tagged_logs_subq = (
         db.session.query(func.count(DeviceLog.log_tag_id))
         .filter(
@@ -132,6 +131,7 @@ def get_devices():
             total_logs,
             total_sessions,
             total_actions,
+
         )
         .outerjoin(
             DeviceLog,
