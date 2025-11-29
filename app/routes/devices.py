@@ -104,7 +104,21 @@ def get_devices():
     # --- Base query ---
     total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
     total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
-
+   
+    tagged_logs_subq = (
+        db.session.query(func.count(DeviceLog.log_tag_id))
+        .filter(
+            DeviceLog.instance_id == Device.instance_id,
+            DeviceLog.actual_log_time >= start_dt,
+            DeviceLog.actual_log_time <= end_dt,
+            DeviceLog.log_tag_id.isnot(None)
+        )
+        .correlate(Device)
+        .as_scalar()
+    )
+    
+    total_actions = tagged_logs_subq.label("total_actions")
+    
     query = (
         db.session.query(
             Device.instance_id,
@@ -117,6 +131,7 @@ def get_devices():
             Device.last_updated,
             total_logs,
             total_sessions,
+            total_actions,
         )
         .outerjoin(
             DeviceLog,
@@ -186,6 +201,7 @@ def get_devices():
             "last_updated": to_iso_utc(d.last_updated),
             "total_logs": int(d.total_logs or 0),
             "total_sessions": int(d.total_sessions or 0),
+            "total_actions": int(d.total_actions or 0),
         }
         for d in devices
     ]
