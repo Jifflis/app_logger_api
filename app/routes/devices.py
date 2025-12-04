@@ -91,7 +91,7 @@ def get_devices():
             DeviceLog.instance_id,
             func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
             func.count(func.distinct(
-                case([(DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id)])
+                case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
             )).label("action_count")
         )
         .filter(
