@@ -63,62 +63,72 @@ def create_device():
 @token_required
 def get_devices():
     """
-    Fetch devices for a given project.
-    Optional filters:
-      - start (optional): ISO8601 UTC datetime string, e.g. "2025-11-12T00:00:00Z"
-      - end (optional): ISO8601 UTC datetime string, e.g. "2025-11-13T00:00:00Z"
-      - platform: filter by platform
-      - page, per_page: pagination
-    Example:
-      GET /devices?platform=ios&page=1&per_page=20&start=2025-11-12T00:00:00Z&end=2025-11-13T00:00:00Z
+    Fetch devices with optional filters:
+      - start, end: ISO8601 UTC datetime strings
+      - platform
+      - pagination
+      - order: most_recent, total_logs_desc, total_logs_asc, total_sessions_desc, total_sessions_asc
+      -https://api.id-makers.com/api/devices?platform=&page=1&per_page=21&start=2025-12-01T00:00:00.000&end=2026-01-01T00:00:00.000&order=total_sessions_desc
     """
-    # --- Parse query params ---
+
+    # ---------------------------
+    # Parse parameters
+    # ---------------------------
     project_id = g.project_id
+    if not project_id:
+        return jsonify({"error": "Missing required parameter: project_id"}), 400
+
     start_str = request.args.get("start")
     end_str = request.args.get("end")
     platform_str = request.args.get("platform")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
-    order = request.args.get("order", "most_recent") #most_recent, total_logs_desc, total_logs_asc, total_sessions_desc, total_sessions_asc
+    order = request.args.get("order", "most_recent")
 
-    if not project_id:
-        return jsonify({"error": "Missing required parameter: project_id"}), 400
-
-    # Determine start and end datetimes
+    # ---------------------------
+    # Parse dates
+    # ---------------------------
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         else:
-            # Default to today UTC
             today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             start_dt = today_utc
             end_dt = today_utc + timedelta(days=1)
+
             start_str = start_dt.isoformat().replace("+00:00", "Z")
             end_str = end_dt.isoformat().replace("+00:00", "Z")
+
     except ValueError:
         return jsonify({
-            "error": "Invalid datetime format. Use ISO 8601 UTC, e.g. 2025-11-12T00:00:00Z"
+            "error": "Invalid datetime format. Expected ISO8601 UTC like 2025-11-12T00:00:00Z"
         }), 400
 
-    # --- Base query ---
+    # ---------------------------
+    # Metrics
+    # ---------------------------
     total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
     total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
+
     tagged_logs_subq = (
         db.session.query(func.count(DeviceLog.log_tag_id))
         .filter(
             DeviceLog.instance_id == Device.instance_id,
             DeviceLog.actual_log_time >= start_dt,
             DeviceLog.actual_log_time <= end_dt,
-            DeviceLog.log_tag_id.isnot(None)
+            DeviceLog.log_tag_id.isnot(None),
         )
         .correlate(Device)
-        .as_scalar()
+        .scalar_subquery()
     )
-    
+
     total_actions = tagged_logs_subq.label("total_actions")
-    
-    query = (
+
+    # ---------------------------
+    # Build base grouped query
+    # ---------------------------
+    base_query = (
         db.session.query(
             Device.instance_id,
             Device.device_id,
@@ -131,7 +141,6 @@ def get_devices():
             total_logs,
             total_sessions,
             total_actions,
-
         )
         .outerjoin(
             DeviceLog,
@@ -163,32 +172,51 @@ def get_devices():
         .having(total_sessions > 0)
     )
 
+    # ---------------------------
     # Ordering
+    # ---------------------------
     if order == "most_recent":
-        query = query.order_by(Device.last_updated.desc())
+        base_query = base_query.order_by(Device.last_updated.desc())
     elif order == "total_logs_desc":
-        query = query.order_by(total_logs.desc())
+        base_query = base_query.order_by(total_logs.desc())
     elif order == "total_logs_asc":
-        query = query.order_by(total_logs.asc())
+        base_query = base_query.order_by(total_logs.asc())
     elif order == "total_sessions_desc":
-        query = query.order_by(total_sessions.desc())
+        base_query = base_query.order_by(total_sessions.desc())
     elif order == "total_sessions_asc":
-        query = query.order_by(total_sessions.asc())    
+        base_query = base_query.order_by(total_sessions.asc())
 
-    # --- Optional platform filter ---
+    # ---------------------------
+    # Platform filter
+    # ---------------------------
     if platform_str:
         try:
             platform_enum = Platform(platform_str.lower())
-            query = query.filter(Device.platform == platform_enum)
+            base_query = base_query.filter(Device.platform == platform_enum)
         except ValueError:
             return jsonify({"error": f"Invalid platform: {platform_str}"}), 400
 
-    # --- Pagination ---
-    total_items = query.count()
-    devices = query.offset((page - 1) * per_page).limit(per_page).all()
+    # ---------------------------
+    # PAGINATION FIX — Correct counting
+    # ---------------------------
+    # SQLAlchemy count() is WRONG on GROUP BY
+    # So wrap inside a subquery
+    grouped_subq = base_query.subquery()
+    total_items = db.session.query(func.count()).select_from(grouped_subq).scalar()
+
+    # Apply pagination on the grouped subquery
+    devices = (
+        db.session.query(grouped_subq)
+        .offset((page - 1) * per_page)
+        .limit(per_page)
+        .all()
+    )
+
     total_pages = (total_items + per_page - 1) // per_page
 
-    # --- Response ---
+    # ---------------------------
+    # Response
+    # ---------------------------
     devices_data = [
         {
             "instance_id": d.instance_id,
@@ -217,10 +245,11 @@ def get_devices():
         "filters": {
             "project_id": project_id,
             "start": start_str,
-            "end":end_str,
+            "end": end_str,
             "platform": platform_str,
         },
     })
+
 
 
 @device_bp.route('/<int:instance_id>', methods=['GET'])
