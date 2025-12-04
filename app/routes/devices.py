@@ -62,7 +62,6 @@ def create_device():
 @device_bp.route('', methods=['GET'])
 @token_required
 def get_devices():
-    # --- Parse parameters ---
     project_id = g.project_id
     start_str = request.args.get("start")
     end_str = request.args.get("end")
@@ -74,7 +73,7 @@ def get_devices():
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # --- Parse dates ---
+    # Parse dates...
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
@@ -83,116 +82,95 @@ def get_devices():
             today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             start_dt = today
             end_dt = today + timedelta(days=1)
-            start_str = start_dt.isoformat().replace("+00:00", "Z")
-            end_str = end_dt.isoformat().replace("+00:00", "Z")
     except Exception:
         return jsonify({"error": "Invalid datetime format"}), 400
 
-    # --- Aggregates ---
-    total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
-    total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
+    # Base query: all devices in project
+    query = db.session.query(Device).filter(Device.project_id == project_id)
 
-    tagged_logs_subq = (
-        db.session.query(func.count(DeviceLog.log_tag_id))
-        .filter(
-            DeviceLog.instance_id == Device.instance_id,
-            DeviceLog.actual_log_time >= start_dt,
-            DeviceLog.actual_log_time <= end_dt,
-            DeviceLog.log_tag_id.isnot(None)
-        )
-        .correlate(Device)
-        .as_scalar()
+    # Conditional aggregates using subqueries (more reliable than join + group)
+    log_subq = db.session.query(
+        DeviceLog.instance_id,
+        func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
+        func.count(func.distinct(case(
+            (DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id)
+        ))).label("action_count")
+    ).filter(
+        DeviceLog.actual_log_time >= start_dt,
+        DeviceLog.actual_log_time < end_dt
+    ).group_by(DeviceLog.instance_id).subquery()
+
+    session_subq = db.session.query(
+        DeviceSession.instance_id,
+        func.count(func.distinct(DeviceSession.id)).label("session_count")
+    ).filter(
+        DeviceSession.actual_log_time >= start_dt,
+        DeviceSession.actual_log_time < end_dt
+    ).group_by(DeviceSession.instance_id).subquery()
+
+    # Main query with LEFT JOINs on aggregated subqueries
+    query = query.outerjoin(
+        log_subq,
+        log_subq.c.instance_id == Device.instance_id
+    ).outerjoin(
+        session_subq,
+        session_subq.c.instance_id == Device.instance_id
     )
 
-    total_actions = tagged_logs_subq.label("total_actions")
+    # Select with coalesced values
+    query = query.add_columns(
+        func.coalesce(log_subq.c.log_count, 0).label("total_logs"),
+        func.coalesce(session_subq.c.session_count, 0).label("total_sessions"),
+        func.coalesce(log_subq.c.action_count, 0).label("total_actions"),
+        Device.instance_id,
+        Device.device_id,
+        Device.name,
+        Device.model,
+        Device.platform,
+        Device.created_at,
+        Device.last_updated
+    )
 
-    # --- MAIN GROUPED QUERY (SUBQUERY) ---
-    grouped = (
-        db.session.query(
-            Device.instance_id,
-            Device.device_id,
-            Device.project_id,
-            Device.name,
-            Device.model,
-            Device.platform,
-            Device.created_at,
-            Device.last_updated,
-            total_logs,
-            total_sessions,
-            total_actions,
-        )
-        .outerjoin(
-            DeviceLog,
-            and_(
-                DeviceLog.instance_id == Device.instance_id,
-                DeviceLog.actual_log_time >= start_dt,
-                DeviceLog.actual_log_time <= end_dt,
-            )
-        )
-        .outerjoin(
-            DeviceSession,
-            and_(
-                DeviceSession.instance_id == Device.instance_id,
-                DeviceSession.actual_log_time >= start_dt,
-                DeviceSession.actual_log_time <= end_dt,
-            )
-        )
-        .filter(Device.project_id == project_id)
-        .group_by(
-            Device.instance_id,
-            Device.device_id,
-            Device.project_id,
-            Device.name,
-            Device.model,
-            Device.platform,
-            Device.created_at,
-            Device.last_updated,
-        )
-        .having(total_sessions > 0)
-    ).subquery()
+    # Filter: only devices active in time range (at least one log OR session)
+    query = query.filter(
+        (log_subq.c.log_count > 0) | (session_subq.c.session_count > 0)
+    )
 
-    # --- OUTER QUERY (PAGINATION APPLIES HERE) ---
-    outer = db.session.query(grouped)
-
-    # Ordering
-    if order == "most_recent":
-        outer = outer.order_by(grouped.c.last_updated.desc())
-    elif order == "total_logs_desc":
-        outer = outer.order_by(grouped.c.total_logs.desc())
-    elif order == "total_logs_asc":
-        outer = outer.order_by(grouped.c.total_logs.asc())
-    elif order == "total_sessions_desc":
-        outer = outer.order_by(grouped.c.total_sessions.desc())
-    elif order == "total_sessions_asc":
-        outer = outer.order_by(grouped.c.total_sessions.asc())
-
-    # Optional platform filter
+    # Platform filter
     if platform_str:
         try:
             platform_enum = Platform(platform_str.lower())
-            outer = outer.filter(grouped.c.platform == platform_enum)
+            query = query.filter(Device.platform == platform_enum)
         except ValueError:
             return jsonify({"error": "Invalid platform"}), 400
 
-    # Correct pagination (on grouped rows!)
-    total_items = outer.count()
-    items = outer.offset((page - 1) * per_page).limit(per_page).all()
+    # === CRITICAL: Stable sorting for pagination ===
+    if order == "most_recent":
+        query = query.order_by(Device.last_updated.desc(), Device.instance_id.desc())
+    elif order == "total_logs_desc":
+        query = query.order_by(func.coalesce(log_subq.c.log_count, 0).desc(), Device.instance_id.desc())
+    elif order == "total_logs_asc":
+        query = query.order_by(func.coalesce(log_subq.c.log_count, 0).asc(), Device.instance_id.desc())
+    # ... same for sessions ...
 
-    # Build response
+    # Pagination
+    total_items = query.count()
+    devices = query.offset((page - 1) * per_page).limit(per_page).all()
+
+    # Build response...
     devices_data = []
-    for d in items:
+    for device, total_logs, total_sessions, total_actions, *_ in devices:
         devices_data.append({
-            "instance_id": d.instance_id,
-            "device_id": d.device_id,
-            "project_id": d.project_id,
-            "name": d.name,
-            "model": d.model,
-            "platform": d.platform.value if d.platform else None,
-            "created_at": to_iso_utc(d.created_at),
-            "last_updated": to_iso_utc(d.last_updated),
-            "total_logs": int(d.total_logs or 0),
-            "total_sessions": int(d.total_sessions or 0),
-            "total_actions": int(d.total_actions or 0),
+            "instance_id": device.instance_id,
+            "device_id": device.device_id,
+            "name": device.name,
+            "model": device.model,
+            "platform": device.platform.value if device.platform else None,
+            "created_at": to_iso_utc(device.created_at),
+            "last_updated": to_iso_utc(device.last_updated),
+            "total_logs": int(total_logs),
+            "total_sessions": int(total_sessions),
+            "total_actions": int(total_actions),
         })
 
     return jsonify({
@@ -203,12 +181,7 @@ def get_devices():
             "total_pages": (total_items + per_page - 1) // per_page,
             "total_items": total_items,
         },
-        "filters": {
-            "project_id": project_id,
-            "start": start_str,
-            "end": end_str,
-            "platform": platform_str,
-        },
+        # ...
     })
 
 
