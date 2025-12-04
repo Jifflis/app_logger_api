@@ -62,6 +62,7 @@ def create_device():
 @device_bp.route('', methods=['GET'])
 @token_required
 def get_devices():
+    # --- Parse parameters ---
     project_id = g.project_id
     start_str = request.args.get("start")
     end_str = request.args.get("end")
@@ -73,7 +74,7 @@ def get_devices():
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # Parse date range
+    # --- Parse dates ---
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
@@ -84,13 +85,14 @@ def get_devices():
             end_dt = today + timedelta(days=1)
             start_str = start_dt.isoformat().replace("+00:00", "Z")
             end_str = end_dt.isoformat().replace("+00:00", "Z")
-    except ValueError:
+    except Exception:
         return jsonify({"error": "Invalid datetime format"}), 400
 
-    # Aggregates
+    # --- Aggregates ---
     total_logs = func.count(func.distinct(DeviceLog.log_id)).label("total_logs")
     total_sessions = func.count(func.distinct(DeviceSession.id)).label("total_sessions")
-    total_actions = (
+
+    tagged_logs_subq = (
         db.session.query(func.count(DeviceLog.log_tag_id))
         .filter(
             DeviceLog.instance_id == Device.instance_id,
@@ -100,11 +102,12 @@ def get_devices():
         )
         .correlate(Device)
         .as_scalar()
-        .label("total_actions")
     )
 
-    # --- MAIN QUERY WITHOUT PAGINATION ---
-    base_query = (
+    total_actions = tagged_logs_subq.label("total_actions")
+
+    # --- MAIN GROUPED QUERY (SUBQUERY) ---
+    grouped = (
         db.session.query(
             Device.instance_id,
             Device.device_id,
@@ -146,53 +149,50 @@ def get_devices():
             Device.last_updated,
         )
         .having(total_sessions > 0)
-    )
+    ).subquery()
 
-    # Filters
+    # --- OUTER QUERY (PAGINATION APPLIES HERE) ---
+    outer = db.session.query(grouped)
+
+    # Ordering
+    if order == "most_recent":
+        outer = outer.order_by(grouped.c.last_updated.desc())
+    elif order == "total_logs_desc":
+        outer = outer.order_by(grouped.c.total_logs.desc())
+    elif order == "total_logs_asc":
+        outer = outer.order_by(grouped.c.total_logs.asc())
+    elif order == "total_sessions_desc":
+        outer = outer.order_by(grouped.c.total_sessions.desc())
+    elif order == "total_sessions_asc":
+        outer = outer.order_by(grouped.c.total_sessions.asc())
+
+    # Optional platform filter
     if platform_str:
         try:
             platform_enum = Platform(platform_str.lower())
-            base_query = base_query.filter(Device.platform == platform_enum)
+            outer = outer.filter(grouped.c.platform == platform_enum)
         except ValueError:
-            return jsonify({"error": f"Invalid platform: {platform_str}"}), 400
+            return jsonify({"error": "Invalid platform"}), 400
 
-    # Ordering
-    ordering_map = {
-        "most_recent": Device.last_updated.desc(),
-        "total_logs_desc": total_logs.desc(),
-        "total_logs_asc": total_logs.asc(),
-        "total_sessions_desc": total_sessions.desc(),
-        "total_sessions_asc": total_sessions.asc(),
-    }
-    base_query = base_query.order_by(ordering_map.get(order, Device.last_updated.desc()))
-
-    # --- FIX PAGINATION USING SUBQUERY ---
-    subq = base_query.subquery()
-
-    total_items = db.session.query(func.count()).select_from(subq).scalar()
-
-    results = (
-        db.session.query(subq)
-        .offset((page - 1) * per_page)
-        .limit(per_page)
-        .all()
-    )
+    # Correct pagination (on grouped rows!)
+    total_items = outer.count()
+    items = outer.offset((page - 1) * per_page).limit(per_page).all()
 
     # Build response
     devices_data = []
-    for row in results:
+    for d in items:
         devices_data.append({
-            "instance_id": row.instance_id,
-            "device_id": row.device_id,
-            "project_id": row.project_id,
-            "name": row.name,
-            "model": row.model,
-            "platform": row.platform.value if row.platform else None,
-            "created_at": to_iso_utc(row.created_at),
-            "last_updated": to_iso_utc(row.last_updated),
-            "total_logs": int(row.total_logs or 0),
-            "total_sessions": int(row.total_sessions or 0),
-            "total_actions": int(row.total_actions or 0),
+            "instance_id": d.instance_id,
+            "device_id": d.device_id,
+            "project_id": d.project_id,
+            "name": d.name,
+            "model": d.model,
+            "platform": d.platform.value if d.platform else None,
+            "created_at": to_iso_utc(d.created_at),
+            "last_updated": to_iso_utc(d.last_updated),
+            "total_logs": int(d.total_logs or 0),
+            "total_sessions": int(d.total_sessions or 0),
+            "total_actions": int(d.total_actions or 0),
         })
 
     return jsonify({
@@ -200,8 +200,8 @@ def get_devices():
         "pagination": {
             "page": page,
             "per_page": per_page,
-            "total_items": total_items,
             "total_pages": (total_items + per_page - 1) // per_page,
+            "total_items": total_items,
         },
         "filters": {
             "project_id": project_id,
@@ -210,6 +210,7 @@ def get_devices():
             "platform": platform_str,
         },
     })
+
 
 
 
