@@ -181,7 +181,12 @@ def get_devices():
             "total_pages": (total_items + per_page - 1) // per_page,
             "total_items": total_items,
         },
-        # ...
+        "filters": {
+            "project_id": project_id,
+            "start": start_str,
+            "end": end_str,
+            "platform": platform_str,
+        },
     })
 
 
