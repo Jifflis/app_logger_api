@@ -3,7 +3,7 @@ from app import db
 from app.models import Device, Project, DeviceLog, Platform, DeviceSession
 from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func, and_
+from sqlalchemy import func, and_,case
 from app.middleware.auth import token_required
 from flask import g
 from app.services.devices_services import save_or_update_device
