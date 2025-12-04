@@ -3,7 +3,7 @@ from app import db
 from app.models import Device, Project, DeviceLog, Platform, DeviceSession
 from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import func, and_,case
+from sqlalchemy import case, func, and_, or_
 from app.middleware.auth import token_required
 from flask import g
 from app.services.devices_services import save_or_update_device
@@ -82,16 +82,16 @@ def get_devices():
             today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
             start_dt = today
             end_dt = today + timedelta(days=1)
-    except Exception as e:
+    except Exception:
         return jsonify({"error": "Invalid datetime format"}), 400
 
-    # Subqueries for counts
+    # Subqueries
     log_subq = (
         db.session.query(
             DeviceLog.instance_id,
             func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
             func.count(func.distinct(
-                case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id))
+                case([(DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id)])
             )).label("action_count")
         )
         .filter(
@@ -115,22 +115,21 @@ def get_devices():
         .subquery()
     )
 
-    # Main query: select Device + aggregates
+    # Main query
     query = (
         db.session.query(
             Device,
             func.coalesce(log_subq.c.log_count, 0).label("total_logs"),
             func.coalesce(session_subq.c.session_count, 0).label("total_sessions"),
-            func.coalesce(log_subq.c.action_count, 0).label("total_actions"),
+            func.coalesce(log_subq.c.action_count, 0).label("total_actions")
         )
         .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
         .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
         .filter(Device.project_id == project_id)
-    )
-
-    # Only devices with activity in time range
-    query = query.filter(
-        (log_subq.c.log_count > 0) | (session_subq.c.session_count > 0)
+        .filter(
+            (log_subq.c.log_count > 0) |
+            (session_subq.c.session_count > 0)
+        )
     )
 
     # Platform filter
@@ -141,7 +140,7 @@ def get_devices():
         except ValueError:
             return jsonify({"error": "Invalid platform"}), 400
 
-    # Stable ordering
+    # Ordering
     if order == "most_recent":
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
     elif order == "total_logs_desc":
@@ -157,16 +156,15 @@ def get_devices():
 
     # Pagination
     total_items = query.count()
-    devices_paginated = query.offset((page - 1) * per_page).limit(per_page).all()
+    results = query.offset((page - 1) * per_page).limit(per_page).all()
 
-    # Build response
     devices_data = []
-    for device, total_logs, total_sessions, total_actions in devices_paginated:
+    for device, total_logs, total_sessions, total_actions in results:
         devices_data.append({
             "instance_id": device.instance_id,
             "device_id": device.device_id,
             "project_id": device.project_id,
-            "name": device.name,
+            "name": device.name or "Unnamed",
             "model": device.model,
             "platform": device.platform.value if device.platform else None,
             "created_at": to_iso_utc(device.created_at),
@@ -185,7 +183,6 @@ def get_devices():
             "total_items": total_items,
         },
         "filters": {
-            "project_id": project_id,
             "start": start_dt.isoformat().replace("+00:00", "Z"),
             "end": end_dt.isoformat().replace("+00:00", "Z"),
             "platform": platform_str,
