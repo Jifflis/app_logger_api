@@ -2,7 +2,7 @@ from flask import Blueprint, request, jsonify,g
 from sqlalchemy.exc import IntegrityError
 from app import db
 from sqlalchemy import func, desc, and_, asc
-from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag,DeviceSession
+from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
 from app.utils.date_util import to_iso_utc
@@ -126,98 +126,94 @@ def get_device_with_log_tag():
 @token_required
 def get_logs_summary():
     """
-    Summary per platform:
-      - total_devices   → devices that have logs OR sessions within the date range
-      - total_logs      → logs within the date range
+    Return per-platform summary for a given project and date range:
+      - total_devices (based on last_updated date)
+      - total_logs (based on logs created within the range)
+
+    Query params:
+      - project_id (from g.project_id)
+      - start (optional): ISO8601 UTC datetime string, e.g. "2025-11-12T00:00:00Z"
+      - end (optional): ISO8601 UTC datetime string, e.g. "2025-11-13T00:00:00Z"
+
+    Sample Request
+      - GET /api/logs_summary?start=2025-11-12T00:00:00Z&end=2025-11-13T00:00:00Z
+      - GET /api/logs_summary
+      
+    If start or end are missing, defaults to today UTC (00:00:00 to 23:59:59).
     """
 
     project_id = g.project_id
     start_str = request.args.get("start")
     end_str = request.args.get("end")
 
+    # Validate project_id
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # ---- Date handling (same as get_devices) ----
+    # Determine start and end datetimes
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         else:
-            today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
-            start_dt = today
-            end_dt = today + timedelta(days=1)
-    except Exception:
-        return jsonify({"error": "Invalid datetime format"}), 400
+            # Default to today UTC
+            today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            start_dt = today_utc
+            end_dt = today_utc + timedelta(days=1)
+            start_str = start_dt.isoformat().replace("+00:00", "Z")
+            end_str = end_dt.isoformat().replace("+00:00", "Z")
+    except ValueError:
+        return jsonify({
+            "error": "Invalid datetime format. Use ISO 8601 UTC, e.g. 2025-11-12T00:00:00Z"
+        }), 400
 
-    # ---- Same subqueries used in get_devices ----
-
-    # Count logs + actions per instance
-    log_subq = (
-        db.session.query(
-            DeviceLog.instance_id,
-            func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
-        )
-        .filter(
-            DeviceLog.actual_log_time >= start_dt,
-            DeviceLog.actual_log_time < end_dt
-        )
-        .group_by(DeviceLog.instance_id)
-        .subquery()
-    )
-
-    # Count sessions per instance
-    session_subq = (
-        db.session.query(
-            DeviceSession.instance_id,
-            func.count(func.distinct(DeviceSession.id)).label("session_count")
-        )
-        .filter(
-            DeviceSession.actual_log_time >= start_dt,
-            DeviceSession.actual_log_time < end_dt
-        )
-        .group_by(DeviceSession.instance_id)
-        .subquery()
-    )
-
-    # ---- Build per-platform summary exactly like get_devices ----
-    summary = (
+    # ---- Query 1: Count devices by platform ---
+    devices_query = (
         db.session.query(
             Device.platform.label("platform"),
-            func.count(Device.instance_id.distinct()).label("total_devices"),
-            func.sum(func.coalesce(log_subq.c.log_count, 0)).label("total_logs"),
+            func.count(Device.instance_id).label("total_devices"),
         )
-        .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
-        .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
-        .filter(Device.project_id == project_id)
-
-        # Keep same rule: device is included if it has logs OR sessions
         .filter(
-            (log_subq.c.log_count > 0) |
-            (session_subq.c.session_count > 0)
+            Device.project_id == project_id,
+            Device.last_updated >= start_dt,
+            Device.last_updated < end_dt,
         )
         .group_by(Device.platform)
-        .all()
     )
+    device_results = {row.platform: row.total_devices for row in devices_query.all()}
 
-    # Convert to dictionary
-    platform_summary = {row.platform: row for row in summary}
+    # ---- Query 2: Count logs by platform ---
+    logs_query = (
+        db.session.query(
+            Device.platform.label("platform"),
+            func.count(DeviceLog.log_id).label("total_logs"),
+        )
+        .join(Device, Device.instance_id == DeviceLog.instance_id)
+        .filter(
+            Device.project_id == project_id,
+            DeviceLog.actual_log_time >= start_dt,
+            DeviceLog.actual_log_time < end_dt,
+        )
+        .group_by(Device.platform)
+    )
+    log_results = {row.platform: row.total_logs for row in logs_query.all()}
 
-    # Return all platforms
-    output = []
+    # ---- Build response and ensure all platforms are included ----
+    summary = []
     for p in Platform:
-        row = platform_summary.get(p)
-        output.append({
+        summary.append({
             "platform": p.value,
-            "total_devices": int(row.total_devices) if row else 0,
-            "total_logs": int(row.total_logs) if row else 0,
+            "total_devices": int(device_results.get(p, 0)),
+            "total_logs": int(log_results.get(p, 0)),
         })
+
+    summary.sort(key=lambda x: x["platform"])
 
     return jsonify({
         "project_id": project_id,
-        "start": start_dt.isoformat().replace("+00:00", "Z"),
-        "end": end_dt.isoformat().replace("+00:00", "Z"),
-        "summary": sorted(output, key=lambda x: x["platform"]),
+        "start": start_str,
+        "end": end_str,
+        "summary": summary,
     })
 
 

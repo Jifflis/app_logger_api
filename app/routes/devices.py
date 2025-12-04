@@ -126,10 +126,10 @@ def get_devices():
         .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
         .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
         .filter(Device.project_id == project_id)
-        .filter(
-            (log_subq.c.log_count > 0) |
-            (session_subq.c.session_count > 0)
-        )
+      .filter(
+        Device.last_updated >= start_dt,
+        Device.last_updated < end_dt
+    )
     )
 
     # Platform filter
