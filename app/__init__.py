@@ -1,4 +1,5 @@
 from flask import Flask
+from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
 
@@ -8,11 +9,14 @@ migrate = Migrate()
 def create_app():
     app = Flask(__name__)
     app.config.from_object('app.config.Config')
+    
+    # Allow only your Next.js app running on localhost:3000
+    CORS(app, resources={r"/*": {"origins": "https://www.id-makers.com"}}, supports_credentials=True)
 
     db.init_app(app)
     migrate.init_app(app, db)
 
-    # Register blueprints
+    # Import blueprints
     from app.routes.users import user_bp
     from app.routes.projects import project_bp
     from app.routes.devices import device_bp
@@ -21,7 +25,8 @@ def create_app():
     from app.routes.tokens import token_bp
     from app.routes.webhook import webhook_bp
     from app.routes.log_tags import log_tag_bp
-	
+
+    # Register blueprints
     app.register_blueprint(user_bp, url_prefix='/api/users')
     app.register_blueprint(project_bp, url_prefix='/api/projects')
     app.register_blueprint(webhook_bp)
