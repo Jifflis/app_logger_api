@@ -59,7 +59,7 @@ def get_actions_by_instance():
 
     result = [
         {
-            "actual_log_time": row.actual_log_time.isoformat(),
+            "actual_log_time": to_iso_utc(row.actual_log_time),
             "tag": row.tag,
         }
         for row in query.all()
