@@ -161,7 +161,7 @@ def get_devices():
     elif order == "registered_desc":
         query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
     elif order == "registered_asc":
-        query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.asc())          
+        query = query.order_by(Device.last_updated.asc().nullslast(), Device.instance_id.asc())          
     else:
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
 
