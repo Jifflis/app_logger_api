@@ -68,7 +68,10 @@ def get_devices():
     platform_str = request.args.get("platform")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
-    order = request.args.get("order", "most_recent")
+    
+    #most_recent,total_logs_desc,total_logs_asc,total_sessions_desc,total_sessions_asc
+    #total_action_desc,total_action_asc,registered_desc, registered_asc
+    order = request.args.get("order", "most_recent") 
 
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
@@ -140,7 +143,7 @@ def get_devices():
         except ValueError:
             return jsonify({"error": "Invalid platform"}), 400
 
-    # Ordering
+    # Ordering 
     if order == "most_recent":
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
     elif order == "total_logs_desc":
@@ -151,6 +154,14 @@ def get_devices():
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).desc(), Device.instance_id.desc())
     elif order == "total_sessions_asc":
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).asc(), Device.instance_id.desc())
+    elif order == "total_action_desc":
+        query = query.order_by(func.coalesce(log_subq.c.action_count, 0).desc(), Device.instance_id.desc())    
+    elif order == "total_action_asc":
+        query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())
+    elif order == "registered_desc":
+        query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
+    elif order == "registered_asc":
+        query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.asc())          
     else:
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
 
