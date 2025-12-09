@@ -70,7 +70,7 @@ def get_devices():
     per_page = int(request.args.get("per_page", 20))
     
     #most_recent,total_logs_desc,total_logs_asc,total_sessions_desc,total_sessions_asc
-    #total_action_desc,total_action_asc,registered_desc, registered_asc
+    #total_actions_desc,total_actions_asc,registered_desc, registered_asc
     order = request.args.get("order", "most_recent") 
 
     if not project_id:
@@ -154,9 +154,9 @@ def get_devices():
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).desc(), Device.instance_id.desc())
     elif order == "total_sessions_asc":
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).asc(), Device.instance_id.desc())
-    elif order == "total_action_desc":
+    elif order == "total_actions_desc":
         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).desc(), Device.instance_id.desc())    
-    elif order == "total_action_asc":
+    elif order == "total_actions_asc":
         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())
     elif order == "registered_desc":
         query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
