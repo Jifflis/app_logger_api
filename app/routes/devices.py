@@ -93,9 +93,7 @@ def get_devices():
         db.session.query(
             DeviceLog.instance_id,
             func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
-            func.count(func.distinct(
-                case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
-            )).label("action_count")
+            func.count(case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)).label("action_count")
         )
         .filter(
             DeviceLog.actual_log_time >= start_dt,

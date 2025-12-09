@@ -25,6 +25,8 @@ def create_app():
     from app.routes.tokens import token_bp
     from app.routes.webhook import webhook_bp
     from app.routes.log_tags import log_tag_bp
+    from app.routes.actions import actions_bp
+    from app.routes.sessions import sessions_bp
 
     # Register blueprints
     app.register_blueprint(user_bp, url_prefix='/api/users')
@@ -35,5 +37,7 @@ def create_app():
     app.register_blueprint(tag_bp, url_prefix='/api/tags')
     app.register_blueprint(token_bp, url_prefix='/api/tokens')
     app.register_blueprint(log_tag_bp, url_prefix='/api/log_tags')
+    app.register_blueprint(actions_bp, url_prefix='/api/actions')
+    app.register_blueprint(sessions_bp, url_prefix='/api/sessions')
 
     return app
