@@ -1,6 +1,6 @@
 from flask import Blueprint, request, jsonify
 from app import db
-from app.models import Device, Project, DeviceLog, Platform, DeviceSession
+from app.models import Device, Project, DeviceLog, Platform, DeviceSession, LogLevel
 from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy import case, func, and_, or_
@@ -92,6 +92,9 @@ def get_devices():
     log_subq = (
         db.session.query(
             DeviceLog.instance_id,
+            func.sum(
+            case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
+        ).label("error_count"),
             func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
             func.count(case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)).label("action_count")
         )
@@ -121,6 +124,7 @@ def get_devices():
         db.session.query(
             Device,
             func.coalesce(log_subq.c.log_count, 0).label("total_logs"),
+            func.coalesce(log_subq.c.error_count, 0).label("total_errors"),
             func.coalesce(session_subq.c.session_count, 0).label("total_sessions"),
             func.coalesce(log_subq.c.action_count, 0).label("total_actions")
         )
@@ -168,7 +172,7 @@ def get_devices():
     results = query.offset((page - 1) * per_page).limit(per_page).all()
 
     devices_data = []
-    for device, total_logs, total_sessions, total_actions in results:
+    for device, total_logs, total_errors, total_sessions, total_actions in results:
         devices_data.append({
             "instance_id": device.instance_id,
             "device_id": device.device_id,
@@ -181,6 +185,7 @@ def get_devices():
             "total_logs": int(total_logs),
             "total_sessions": int(total_sessions),
             "total_actions": int(total_actions),
+            "total_errors": int(total_errors),
         })
 
     return jsonify({
