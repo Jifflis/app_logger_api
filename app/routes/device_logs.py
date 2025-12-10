@@ -1,7 +1,7 @@
 from flask import Blueprint, request, jsonify,g
 from sqlalchemy.exc import IntegrityError
 from app import db
-from sqlalchemy import func, desc, and_, asc
+from sqlalchemy import func, desc, case, asc
 from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
@@ -187,6 +187,9 @@ def get_logs_summary():
         db.session.query(
             Device.platform.label("platform"),
             func.count(DeviceLog.log_id).label("total_logs"),
+            func.sum(
+            case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
+        ).label("total_errors"),
         )
         .join(Device, Device.instance_id == DeviceLog.instance_id)
         .filter(
@@ -196,16 +199,28 @@ def get_logs_summary():
         )
         .group_by(Device.platform)
     )
-    log_results = {row.platform: row.total_logs for row in logs_query.all()}
+    
+    
+    
+    log_results = {
+            row.platform: {
+                "total_logs": row.total_logs,
+                "total_errors": row.total_errors,
+            }
+            for row in logs_query.all()
+    }
 
     # ---- Build response and ensure all platforms are included ----
     summary = []
     for p in Platform:
+        logs = log_results.get(p, {"total_logs": 0, "total_errors": 0})
+
         summary.append({
             "platform": p.value,
             "total_devices": int(device_results.get(p, 0)),
-            "total_logs": int(log_results.get(p, 0)),
-        })
+            "total_logs": int(logs["total_logs"]),
+            "total_errors": int(logs["total_errors"]),
+    })
 
     summary.sort(key=lambda x: x["platform"])
 
