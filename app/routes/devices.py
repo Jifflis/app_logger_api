@@ -71,8 +71,9 @@ def get_devices():
     per_page = int(request.args.get("per_page", 20))
     log_level = request.args.get("log_level")
     
-    #most_recent,total_logs_desc,total_logs_asc,total_sessions_desc,total_sessions_asc
-    #total_actions_desc,total_actions_asc,registered_desc, registered_asc
+    #most_recent,logs_desc,logs_asc,sessions_desc,sessions_asc
+    #actions_desc,actions_asc,registered_desc, registered_asc
+    #errors_asc, errors_desc
     order = request.args.get("order", "most_recent") 
 
     if not project_id:
@@ -167,17 +168,21 @@ def get_devices():
     # Ordering 
     if order == "most_recent":
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
-    elif order == "total_logs_desc":
+    elif order == "logs_desc":
         query = query.order_by(func.coalesce(log_subq.c.log_count, 0).desc(), Device.instance_id.desc())
-    elif order == "total_logs_asc":
+    elif order == "logs_asc":
         query = query.order_by(func.coalesce(log_subq.c.log_count, 0).asc(), Device.instance_id.desc())
-    elif order == "total_sessions_desc":
+    elif order == "sessions_desc":
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).desc(), Device.instance_id.desc())
-    elif order == "total_sessions_asc":
+    elif order == "sessions_asc":
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).asc(), Device.instance_id.desc())
-    elif order == "total_actions_desc":
+    elif order == "actions_desc":
         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).desc(), Device.instance_id.desc())    
-    elif order == "total_actions_asc":
+    elif order == "errors_asc":
+        query = query.order_by(func.coalesce(log_subq.c.error_count, 0).asc(), Device.instance_id.asc())
+    elif order == "errors_desc":
+        query = query.order_by(func.coalesce(log_subq.c.error_count, 0).desc(), Device.instance_id.desc())    
+    elif order == "actions_asc":
         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())
     elif order == "registered_desc":
         query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
