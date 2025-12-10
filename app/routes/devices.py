@@ -9,6 +9,7 @@ from flask import g
 from app.services.devices_services import save_or_update_device
 from app.services.device_sessions_services import save_session
 from app.utils.date_util import to_iso_utc
+import traceback
 
 device_bp = Blueprint('devices', __name__)
 
@@ -68,6 +69,7 @@ def get_devices():
     platform_str = request.args.get("platform")
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
+    log_level = request.args.get("log_level")
     
     #most_recent,total_logs_desc,total_logs_asc,total_sessions_desc,total_sessions_asc
     #total_actions_desc,total_actions_asc,registered_desc, registered_asc
@@ -89,22 +91,35 @@ def get_devices():
         return jsonify({"error": "Invalid datetime format"}), 400
 
     # Subqueries
-    log_subq = (
-        db.session.query(
-            DeviceLog.instance_id,
-            func.sum(
+    log_query = (
+    db.session.query(
+        DeviceLog.instance_id,
+        func.sum(
             case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
         ).label("error_count"),
-            func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
-            func.count(case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)).label("action_count")
-        )
-        .filter(
-            DeviceLog.actual_log_time >= start_dt,
-            DeviceLog.actual_log_time < end_dt
-        )
-        .group_by(DeviceLog.instance_id)
-        .subquery()
+        func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
+        func.count(
+            case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
+        ).label("action_count"),
     )
+    .filter(
+        DeviceLog.actual_log_time >= start_dt,
+        DeviceLog.actual_log_time < end_dt
+    )
+)
+
+    # Apply log level filter BEFORE subquery()
+    if log_level:
+        try:
+            log_level_enum = LogLevel(log_level.upper())
+            log_query = log_query.filter(DeviceLog.level == log_level_enum)
+        except ValueError:
+            print("Invalid log level:", log_level)
+            traceback.print_exc()
+            return jsonify({"error": "Invalid Log level"}), 400
+
+    # Now group and convert to subquery
+    log_subq = log_query.group_by(DeviceLog.instance_id).subquery()
 
     session_subq = (
         db.session.query(
@@ -144,6 +159,7 @@ def get_devices():
             query = query.filter(Device.platform == platform_enum)
         except ValueError:
             return jsonify({"error": "Invalid platform"}), 400
+        
 
     # Ordering 
     if order == "most_recent":
