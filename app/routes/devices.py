@@ -152,6 +152,9 @@ def get_devices():
     )
     )
 
+    if log_level:
+        query = query.filter(log_subq.c.instance_id.isnot(None))
+    
     # Platform filter
     if platform_str:
         try:
