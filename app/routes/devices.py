@@ -53,9 +53,6 @@ def initialize_device():
         data['country'] = country
     except Exception as e:
         data['country'] = None  # fallback if IP is private or not in DB
-    
-    
-    print("Country:", data['country'])
      
     try:
         save_or_update_device(data)
