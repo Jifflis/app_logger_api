@@ -48,7 +48,8 @@ def initialize_device():
     # 2️⃣ Lookup country
     try:
         response = geoip_reader.country(client_ip)
-        country = response.country.iso_code  # e.g., "PH" for Philippines
+        country = response.country.name or "unknown"  # e.g., "PH" for Philippines
+        #country = response.country.iso_code
         data['country'] = country
     except Exception as e:
         data['country'] = None  # fallback if IP is private or not in DB
