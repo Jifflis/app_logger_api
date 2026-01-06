@@ -11,12 +11,14 @@ def save_or_update_device(data):
             model=data.get('model'),
             project_id = data.get('project_id'),
             platform = data.get('platform').upper(),
+            country = data.get('country'),
             last_updated = data.get('actual_log_time'))
         db.session.add(device)
     else:
         device.device_id = data.get('device_id', device.device_id)
         device.name = data.get('name', device.name)
         device.model = data.get('model', device.model)
+        device.country = data.get('country', device.country)
         device.project_id = data.get('project_id', device.project_id)
         device.platform = data.get('platform',device.platform).upper()
         device.last_updated = data.get('actual_log_time',device.last_updated)

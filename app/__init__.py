@@ -2,12 +2,21 @@ from flask import Flask
 from flask_cors import CORS
 from flask_sqlalchemy import SQLAlchemy
 from flask_migrate import Migrate
+from werkzeug.middleware.proxy_fix import ProxyFix
 
 db = SQLAlchemy()
 migrate = Migrate()
 
 def create_app():
     app = Flask(__name__)
+    
+    # 2️⃣ Wrap it with ProxyFix to trust Nginx headers
+    app.wsgi_app = ProxyFix(
+        app.wsgi_app,
+        x_for=1,      # trust first X-Forwarded-For
+        x_proto=1     # trust first X-Forwarded-Proto
+    )
+
     app.config.from_object('app.config.Config')
     
     # Allow only your Next.js app running on localhost:3000

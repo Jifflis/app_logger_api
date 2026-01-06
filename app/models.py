@@ -68,6 +68,7 @@ class Device(db.Model):
     platform = db.Column(db.Enum(Platform), nullable=False, index=True, default=Platform.UNKNOWN)
     created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc))
     last_updated = db.Column(db.DateTime)
+    country = db.Column(db.String(100), nullable=True, index=True)
 
 
     project = db.relationship("Project", back_populates="devices")

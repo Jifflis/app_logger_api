@@ -9,10 +9,16 @@ from flask import g
 from app.services.devices_services import save_or_update_device
 from app.services.device_sessions_services import save_session
 from app.utils.date_util import to_iso_utc
+from geoip2.database import Reader
+
+import os
 import traceback
 
 device_bp = Blueprint('devices', __name__)
 
+geo_path = os.getenv('GEO_LITE')
+geoip_reader = Reader(geo_path)
+#geoip_reader = Reader('/usr/share/GeoIP/GeoLite2-Country.mmdb')
 
 @device_bp.route('/init',methods =['POST'])
 @token_required
@@ -31,6 +37,25 @@ def initialize_device():
 
     data['project_id'] = g.project_id
     
+    # 1️⃣ Get the client IP
+    # Flask sees the IP from Nginx using ProxyFix
+    client_ip = request.remote_addr
+    
+    print("Path:", geo_path)
+
+    print("Client IP:", client_ip)
+
+    # 2️⃣ Lookup country
+    try:
+        response = geoip_reader.country(client_ip)
+        country = response.country.iso_code  # e.g., "PH" for Philippines
+        data['country'] = country
+    except Exception as e:
+        data['country'] = None  # fallback if IP is private or not in DB
+    
+    
+    print("Country:", data['country'])
+     
     try:
         save_or_update_device(data)
         save_session(data)
@@ -202,6 +227,7 @@ def get_devices():
             "device_id": device.device_id,
             "project_id": device.project_id,
             "name": device.name or "Unnamed",
+            "country": device.country or "na",
             "model": device.model,
             "platform": device.platform.value if device.platform else None,
             "created_at": to_iso_utc(device.created_at),
