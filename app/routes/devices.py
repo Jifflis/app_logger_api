@@ -3,7 +3,7 @@ from app import db
 from app.models import Device, Project, DeviceLog, Platform, DeviceSession, LogLevel
 from datetime import datetime,timezone,timedelta
 from sqlalchemy.exc import IntegrityError
-from sqlalchemy import case, func, and_, or_
+from sqlalchemy import case, func, distinct
 from app.middleware.auth import token_required
 from flask import g
 from app.services.devices_services import save_or_update_device
@@ -252,7 +252,77 @@ def get_devices():
     })
 
 
+@device_bp.route('/devices-by-country', methods=['GET'])
+@token_required
+def devices_by_country():
+    """
+    Query params:
+      - project_id (required)
+      - start_time (optional, ISO 8601)
+      - end_time (optional, ISO 8601)
 
+    Behavior:
+      - If start_time AND end_time exist → count devices based on logs
+      - Otherwise → count devices directly from Device table
+    """
+
+    project_id = g.project_id
+    start_time = request.args.get("start_time")
+    end_time = request.args.get("end_time")
+
+    if not project_id:
+        return jsonify({"error": "project_id is required"}), 400
+
+    # -------------------------------------------------
+    # CASE 1: No time filter → count from Device model
+    # -------------------------------------------------
+    if not start_time or not end_time:
+        results = (
+            db.session.query(
+                Device.country.label("country"),
+                func.count(Device.instance_id).label("device_count"),
+            )
+            .filter(Device.project_id == project_id)
+            .group_by(Device.country)
+            .order_by(func.count(Device.instance_id).desc())
+            .all()
+        )
+
+    # -------------------------------------------------
+    # CASE 2: Time filter → count from DeviceLog
+    # -------------------------------------------------
+    else:
+        try:
+            start_time = datetime.fromisoformat(start_time.replace("Z", "+00:00"))
+            end_time = datetime.fromisoformat(end_time.replace("Z", "+00:00"))
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format"}), 400
+
+        results = (
+            db.session.query(
+                Device.country.label("country"),
+                func.count(distinct(Device.instance_id)).label("device_count"),
+            )
+            .join(DeviceLog, DeviceLog.instance_id == Device.instance_id)
+            .filter(DeviceLog.project_id == project_id)
+            .filter(DeviceLog.actual_log_time.between(start_time, end_time))
+            .group_by(Device.country)
+            .order_by(func.count(distinct(Device.instance_id)).desc())
+            .all()
+        )
+
+    # -------------------------------------------------
+    # Response formatting
+    # -------------------------------------------------
+    response = [
+        {
+            "country": row.country or "UNKNOWN",
+            "device_count": row.device_count,
+        }
+        for row in results
+    ]
+
+    return jsonify(response)
 
 
 @device_bp.route('/<int:instance_id>', methods=['GET'])
