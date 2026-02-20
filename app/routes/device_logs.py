@@ -125,73 +125,61 @@ def get_device_with_log_tag():
 @log_bp.route('/summary', methods=['GET'])
 @token_required
 def get_logs_summary():
-    """
-    Return per-platform summary for a given project and date range:
-      - total_devices (based on last_updated date)
-      - total_logs (based on logs created within the range)
-
-    Query params:
-      - project_id (from g.project_id)
-      - start (optional): ISO8601 UTC datetime string, e.g. "2025-11-12T00:00:00Z"
-      - end (optional): ISO8601 UTC datetime string, e.g. "2025-11-13T00:00:00Z"
-
-    Sample Request
-      - GET /api/logs_summary?start=2025-11-12T00:00:00Z&end=2025-11-13T00:00:00Z
-      - GET /api/logs_summary
-      
-    If start or end are missing, defaults to today UTC (00:00:00 to 23:59:59).
-    """
 
     project_id = g.project_id
     start_str = request.args.get("start")
     end_str = request.args.get("end")
 
-    # Validate project_id
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # Determine start and end datetimes
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
             end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
         else:
-            # Default to today UTC
-            today_utc = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+            today_utc = datetime.now(timezone.utc).replace(
+                hour=0, minute=0, second=0, microsecond=0
+            )
             start_dt = today_utc
             end_dt = today_utc + timedelta(days=1)
+
             start_str = start_dt.isoformat().replace("+00:00", "Z")
             end_str = end_dt.isoformat().replace("+00:00", "Z")
+
     except ValueError:
         return jsonify({
-            "error": "Invalid datetime format. Use ISO 8601 UTC, e.g. 2025-11-12T00:00:00Z"
+            "error": "Invalid datetime format. Use ISO 8601 UTC"
         }), 400
 
-    # ---- Query 1: Count devices by platform ---
-    devices_query = (
-        db.session.query(
-            Device.platform.label("platform"),
-            func.count(Device.instance_id).label("total_devices"),
-        )
-        .filter(
-            Device.project_id == project_id,
-            Device.last_updated >= start_dt,
-            Device.last_updated < end_dt,
-        )
-        .group_by(Device.platform)
-    )
-    device_results = {row.platform: row.total_devices for row in devices_query.all()}
 
-    # ---- Query 2: Count logs by platform ---
+    # Main query — matches your device endpoint logic
     logs_query = (
         db.session.query(
             Device.platform.label("platform"),
-            func.count(DeviceLog.log_id).label("total_logs"),
-            func.sum(
-            case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
-        ).label("total_errors"),
+
+            func.count(
+                func.distinct(Device.instance_id)
+            ).label("total_devices"),
+
+            func.count(
+                DeviceLog.log_id
+            ).label("total_logs"),
+
+            func.coalesce(
+                func.sum(
+                    case(
+                        (DeviceLog.level == LogLevel.ERROR, 1),
+                        else_=0
+                    )
+                ),
+                0
+            ).label("total_errors"),
         )
-        .join(Device, Device.instance_id == DeviceLog.instance_id)
+        .join(
+            Device,
+            Device.instance_id == DeviceLog.instance_id
+        )
         .filter(
             Device.project_id == project_id,
             DeviceLog.actual_log_time >= start_dt,
@@ -199,30 +187,39 @@ def get_logs_summary():
         )
         .group_by(Device.platform)
     )
-    
-    
-    
+
+
     log_results = {
-            row.platform: {
-                "total_logs": row.total_logs,
-                "total_errors": row.total_errors,
-            }
-            for row in logs_query.all()
+        row.platform: {
+            "total_devices": int(row.total_devices),
+            "total_logs": int(row.total_logs),
+            "total_errors": int(row.total_errors),
+        }
+        for row in logs_query.all()
     }
 
-    # ---- Build response and ensure all platforms are included ----
+
+    # Build response safely
     summary = []
+
     for p in Platform:
-        logs = log_results.get(p, {"total_logs": 0, "total_errors": 0})
+
+        data = log_results.get(p, {
+            "total_devices": 0,
+            "total_logs": 0,
+            "total_errors": 0,
+        })
 
         summary.append({
             "platform": p.value,
-            "total_devices": int(device_results.get(p, 0)),
-            "total_logs": int(logs["total_logs"]),
-            "total_errors": int(logs["total_errors"]),
-    })
+            "total_devices": data["total_devices"],
+            "total_logs": data["total_logs"],
+            "total_errors": data["total_errors"],
+        })
+
 
     summary.sort(key=lambda x: x["platform"])
+
 
     return jsonify({
         "project_id": project_id,
@@ -230,6 +227,7 @@ def get_logs_summary():
         "end": end_str,
         "summary": summary,
     })
+
 
 
 @log_bp.route('/by-instance', methods=['GET'])
