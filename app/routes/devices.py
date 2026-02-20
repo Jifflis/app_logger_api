@@ -170,10 +170,7 @@ def get_devices():
         .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
         .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
         .filter(Device.project_id == project_id)
-      .filter(
-        Device.last_updated >= start_dt,
-        Device.last_updated < end_dt
-    )
+      .filter(log_subq.c.instance_id.isnot(None))
     )
 
     if log_level:
