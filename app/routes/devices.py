@@ -83,6 +83,180 @@ def create_device():
     db.session.commit()
     return jsonify({'message': 'Device created', 'instance_id': device.instance_id}), 201
 
+# @device_bp.route('', methods=['GET'])
+# @token_required
+# def get_devices():
+#     project_id = g.project_id
+#     start_str = request.args.get("start")
+#     end_str = request.args.get("end")
+#     platform_str = request.args.get("platform")
+#     page = int(request.args.get("page", 1))
+#     per_page = int(request.args.get("per_page", 20))
+#     log_level = request.args.get("log_level")
+#     is_watch_list = request.args.get("is_watch_list", "false").lower() == "true"
+#     name_filter = request.args.get("name")
+    
+#     #most_recent,logs_desc,logs_asc,sessions_desc,sessions_asc
+#     #actions_desc,actions_asc,registered_desc, registered_asc
+#     #errors_asc, errors_desc
+#     order = request.args.get("order", "most_recent") 
+
+#     if not project_id:
+#         return jsonify({"error": "Missing required parameter: project_id"}), 400
+
+#     # Parse dates
+#     try:
+#         if start_str and end_str:
+#             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
+#             end_dt = datetime.fromisoformat(end_str.replace("Z", "+00:00"))
+#         else:
+#             today = datetime.now(timezone.utc).replace(hour=0, minute=0, second=0, microsecond=0)
+#             start_dt = today
+#             end_dt = today + timedelta(days=1)
+#     except Exception:
+#         return jsonify({"error": "Invalid datetime format"}), 400
+
+#     # Subqueries
+#     log_query = (
+#     db.session.query(
+#         DeviceLog.instance_id,
+#         func.sum(
+#             case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
+#         ).label("error_count"),
+#         func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
+#         func.count(
+#             case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
+#         ).label("action_count"),
+#     )
+#     .filter(
+#         DeviceLog.actual_log_time >= start_dt,
+#         DeviceLog.actual_log_time < end_dt
+#     )
+# )
+
+#     # Apply log level filter BEFORE subquery()
+#     if log_level:
+#         try:
+#             log_level_enum = LogLevel(log_level.upper())
+#             log_query = log_query.filter(DeviceLog.level == log_level_enum)
+#         except ValueError:
+#             print("Invalid log level:", log_level)
+#             traceback.print_exc()
+#             return jsonify({"error": "Invalid Log level"}), 400
+
+#     # Now group and convert to subquery
+#     log_subq = log_query.group_by(DeviceLog.instance_id).subquery()
+
+#     session_subq = (
+#         db.session.query(
+#             DeviceSession.instance_id,
+#             func.count(func.distinct(DeviceSession.id)).label("session_count")
+#         )
+#         .filter(
+#             DeviceSession.actual_log_time >= start_dt,
+#             DeviceSession.actual_log_time < end_dt
+#         )
+#         .group_by(DeviceSession.instance_id)
+#         .subquery()
+#     )
+
+#     # Main query
+#     query = (
+#         db.session.query(
+#             Device,
+#             func.coalesce(log_subq.c.log_count, 0).label("total_logs"),
+#             func.coalesce(log_subq.c.error_count, 0).label("total_errors"),
+#             func.coalesce(session_subq.c.session_count, 0).label("total_sessions"),
+#             func.coalesce(log_subq.c.action_count, 0).label("total_actions")
+#         )
+#         .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
+#         .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
+#         .filter(Device.project_id == project_id)
+#       .filter(log_subq.c.instance_id.isnot(None))
+#     )
+
+#     if log_level:
+#         query = query.filter(log_subq.c.instance_id.isnot(None))
+        
+        
+#     if is_watch_list:
+#         query = query.filter(Device.watch_date.isnot(None))
+        
+#     if name_filter:
+#         query = query.filter(Device.name.ilike(f"%{name_filter}%"))    
+        
+#     # Platform filter
+#     if platform_str:
+#         try:
+#             platform_enum = Platform(platform_str.lower())
+#             query = query.filter(Device.platform == platform_enum)
+#         except ValueError:
+#             return jsonify({"error": "Invalid platform"}), 400
+        
+
+#     # Ordering 
+#     if order == "most_recent":
+#         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
+#     elif order == "logs_desc":
+#         query = query.order_by(func.coalesce(log_subq.c.log_count, 0).desc(), Device.instance_id.desc())
+#     elif order == "logs_asc":
+#         query = query.order_by(func.coalesce(log_subq.c.log_count, 0).asc(), Device.instance_id.desc())
+#     elif order == "sessions_desc":
+#         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).desc(), Device.instance_id.desc())
+#     elif order == "sessions_asc":
+#         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).asc(), Device.instance_id.desc())
+#     elif order == "actions_desc":
+#         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).desc(), Device.instance_id.desc())    
+#     elif order == "errors_asc":
+#         query = query.order_by(func.coalesce(log_subq.c.error_count, 0).asc(), Device.instance_id.asc())
+#     elif order == "errors_desc":
+#         query = query.order_by(func.coalesce(log_subq.c.error_count, 0).desc(), Device.instance_id.desc())    
+#     elif order == "actions_asc":
+#         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())
+#     elif order == "registered_desc":
+#         query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
+#     elif order == "registered_asc":
+#         query = query.order_by(Device.created_at.asc().nullslast(), Device.instance_id.asc())          
+#     else:
+#         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
+
+#     # Pagination
+#     total_items = query.count()
+#     results = query.offset((page - 1) * per_page).limit(per_page).all()
+
+#     devices_data = []
+#     for device, total_logs, total_errors, total_sessions, total_actions in results:
+#         devices_data.append({
+#             "instance_id": device.instance_id,
+#             "device_id": device.device_id,
+#             "project_id": device.project_id,
+#             "name": device.name or "Unnamed",
+#             "country": device.country or "na",
+#             "model": device.model,
+#             "platform": device.platform.value if device.platform else None,
+#             "created_at": to_iso_utc(device.created_at),
+#             "last_updated": to_iso_utc(device.last_updated),
+#             "total_logs": int(total_logs),
+#             "total_sessions": int(total_sessions),
+#             "total_actions": int(total_actions),
+#             "total_errors": int(total_errors),
+#         })
+
+#     return jsonify({
+#         "devices": devices_data,
+#         "pagination": {
+#             "page": page,
+#             "per_page": per_page,
+#             "total_pages": (total_items + per_page - 1) // per_page,
+#             "total_items": total_items,
+#         },
+#         "filters": {
+#             "start": start_dt.isoformat().replace("+00:00", "Z"),
+#             "end": end_dt.isoformat().replace("+00:00", "Z"),
+#             "platform": platform_str,
+#         }
+#     })
+
 @device_bp.route('', methods=['GET'])
 @token_required
 def get_devices():
@@ -93,16 +267,14 @@ def get_devices():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
     log_level = request.args.get("log_level")
-    
-    #most_recent,logs_desc,logs_asc,sessions_desc,sessions_asc
-    #actions_desc,actions_asc,registered_desc, registered_asc
-    #errors_asc, errors_desc
-    order = request.args.get("order", "most_recent") 
+    is_watch_list = request.args.get("is_watch_list", "false").lower() == "true"
+    name_filter = request.args.get("name")
+    order = request.args.get("order", "most_recent")
 
     if not project_id:
         return jsonify({"error": "Missing required parameter: project_id"}), 400
 
-    # Parse dates
+    # Parse date range
     try:
         if start_str and end_str:
             start_dt = datetime.fromisoformat(start_str.replace("Z", "+00:00"))
@@ -114,46 +286,33 @@ def get_devices():
     except Exception:
         return jsonify({"error": "Invalid datetime format"}), 400
 
-    # Subqueries
+    # Subquery: logs
     log_query = (
-    db.session.query(
-        DeviceLog.instance_id,
-        func.sum(
-            case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
-        ).label("error_count"),
-        func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
-        func.count(
-            case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
-        ).label("action_count"),
+        db.session.query(
+            DeviceLog.instance_id,
+            func.sum(case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)).label("error_count"),
+            func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
+            func.count(case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)).label("action_count"),
+        )
+        .filter(DeviceLog.actual_log_time >= start_dt, DeviceLog.actual_log_time < end_dt)
     )
-    .filter(
-        DeviceLog.actual_log_time >= start_dt,
-        DeviceLog.actual_log_time < end_dt
-    )
-)
 
-    # Apply log level filter BEFORE subquery()
     if log_level:
         try:
             log_level_enum = LogLevel(log_level.upper())
             log_query = log_query.filter(DeviceLog.level == log_level_enum)
         except ValueError:
-            print("Invalid log level:", log_level)
-            traceback.print_exc()
             return jsonify({"error": "Invalid Log level"}), 400
 
-    # Now group and convert to subquery
     log_subq = log_query.group_by(DeviceLog.instance_id).subquery()
 
+    # Subquery: sessions
     session_subq = (
         db.session.query(
             DeviceSession.instance_id,
             func.count(func.distinct(DeviceSession.id)).label("session_count")
         )
-        .filter(
-            DeviceSession.actual_log_time >= start_dt,
-            DeviceSession.actual_log_time < end_dt
-        )
+        .filter(DeviceSession.actual_log_time >= start_dt, DeviceSession.actual_log_time < end_dt)
         .group_by(DeviceSession.instance_id)
         .subquery()
     )
@@ -170,22 +329,23 @@ def get_devices():
         .outerjoin(log_subq, log_subq.c.instance_id == Device.instance_id)
         .outerjoin(session_subq, session_subq.c.instance_id == Device.instance_id)
         .filter(Device.project_id == project_id)
-      .filter(log_subq.c.instance_id.isnot(None))
     )
 
-    if log_level:
-        query = query.filter(log_subq.c.instance_id.isnot(None))
-    
-    # Platform filter
+    # Optional filters
+    if is_watch_list:
+        query = query.filter(Device.watch_date.isnot(None))
+
+    if name_filter:
+        query = query.filter(Device.name.ilike(f"%{name_filter}%"))
+
     if platform_str:
         try:
             platform_enum = Platform(platform_str.lower())
             query = query.filter(Device.platform == platform_enum)
         except ValueError:
             return jsonify({"error": "Invalid platform"}), 400
-        
 
-    # Ordering 
+    # Ordering
     if order == "most_recent":
         query = query.order_by(Device.last_updated.desc().nullslast(), Device.instance_id.desc())
     elif order == "logs_desc":
@@ -198,12 +358,12 @@ def get_devices():
         query = query.order_by(func.coalesce(session_subq.c.session_count, 0).asc(), Device.instance_id.desc())
     elif order == "actions_desc":
         query = query.order_by(func.coalesce(log_subq.c.action_count, 0).desc(), Device.instance_id.desc())    
+    elif order == "actions_asc":
+        query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())  
+    elif order == "errors_desc":
+        query = query.order_by(func.coalesce(log_subq.c.error_count, 0).desc(), Device.instance_id.desc())
     elif order == "errors_asc":
         query = query.order_by(func.coalesce(log_subq.c.error_count, 0).asc(), Device.instance_id.asc())
-    elif order == "errors_desc":
-        query = query.order_by(func.coalesce(log_subq.c.error_count, 0).desc(), Device.instance_id.desc())    
-    elif order == "actions_asc":
-        query = query.order_by(func.coalesce(log_subq.c.action_count, 0).asc(), Device.instance_id.asc())
     elif order == "registered_desc":
         query = query.order_by(Device.created_at.desc().nullslast(), Device.instance_id.desc())  
     elif order == "registered_asc":
@@ -245,6 +405,8 @@ def get_devices():
             "start": start_dt.isoformat().replace("+00:00", "Z"),
             "end": end_dt.isoformat().replace("+00:00", "Z"),
             "platform": platform_str,
+            "is_watch_list": is_watch_list,
+            "name": name_filter
         }
     })
 
@@ -354,5 +516,41 @@ def delete_device(instance_id):
     db.session.delete(device)
     db.session.commit()
     return jsonify({'message': 'Device deleted'})
+
+
+@device_bp.route('/watch_date', methods=['PUT'])
+@token_required
+def update_watch_date():
+    data = request.get_json()
+    
+    instance_id = data.get('instance_id')
+    watch_date_str = data.get('watch_date')  # can be None
+    
+    if not instance_id:
+        return jsonify({"error": "instance_id is required"}), 400
+
+    # parse datetime if provided
+    if watch_date_str:
+        try:
+            watch_date = datetime.fromisoformat(watch_date_str)
+        except ValueError:
+            return jsonify({"error": "Invalid datetime format, use ISO format"}), 400
+    else:
+        watch_date = None
+
+    # fetch device using instance_id (primary key)
+    device = Device.query.filter_by(instance_id=instance_id).first()
+    if not device:
+        return jsonify({"error": "Device not found"}), 404
+
+    # update watch_date
+    device.watch_date = watch_date
+    db.session.commit()
+
+    return jsonify({
+        "message": "watch_date updated successfully",
+        "instance_id": device.instance_id,
+        "watch_date": device.watch_date.isoformat() if device.watch_date else None
+    }), 200
 
     
