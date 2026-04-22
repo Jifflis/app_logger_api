@@ -92,6 +92,7 @@ def get_devices():
     log_level = request.args.get("log_level")
     is_watch_list = request.args.get("is_watch_list", "false").lower() == "true"
     name_filter = request.args.get("name")
+    log_tag_id = request.args.get("log_tag_id")
     
     #most_recent,logs_desc,logs_asc,sessions_desc,sessions_asc
     #actions_desc,actions_asc,registered_desc, registered_asc
@@ -115,21 +116,28 @@ def get_devices():
 
     # Subqueries
     log_query = (
-    db.session.query(
-        DeviceLog.instance_id,
-        func.sum(
-            case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
-        ).label("error_count"),
-        func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
-        func.count(
-            case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
-        ).label("action_count"),
+        db.session.query(
+            DeviceLog.instance_id,
+            func.sum(
+                case((DeviceLog.level == LogLevel.ERROR, 1), else_=0)
+            ).label("error_count"),
+            func.count(func.distinct(DeviceLog.log_id)).label("log_count"),
+            func.count(
+                case((DeviceLog.log_tag_id.isnot(None), DeviceLog.log_tag_id), else_=None)
+            ).label("action_count"),
+        )
+        .filter(
+            DeviceLog.actual_log_time >= start_dt,
+            DeviceLog.actual_log_time < end_dt
+        )
     )
-    .filter(
-        DeviceLog.actual_log_time >= start_dt,
-        DeviceLog.actual_log_time < end_dt
-    )
-)
+    
+    # Filter by LogTag ID
+    if log_tag_id:
+        try:
+            log_query = log_query.filter(DeviceLog.log_tag_id == int(log_tag_id))
+        except ValueError:
+            return jsonify({"error": "Invalid log_tag_id"}), 400
 
     # Apply log level filter BEFORE subquery()
     if log_level:
@@ -172,8 +180,8 @@ def get_devices():
       .filter(log_subq.c.instance_id.isnot(None))
     )
 
-    if log_level:
-        query = query.filter(log_subq.c.instance_id.isnot(None))
+    # if log_level:
+    #     query = query.filter(log_subq.c.instance_id.isnot(None))
         
         
     if is_watch_list:
