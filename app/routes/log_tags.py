@@ -38,7 +38,8 @@ def get_logs_summary():
         db.session.query(
             LogTag.tag.label("tag"),
             LogTag.id.label("id"),
-            func.count(DeviceLog.log_id).label("total_count")
+            func.count(DeviceLog.log_id).label("total_count"),
+            func.count(func.distinct(DeviceLog.instance_id)).label("device_count"),
         )
         .outerjoin(
             DeviceLog,
@@ -51,7 +52,7 @@ def get_logs_summary():
     )
 
     tag_list = [
-        {"id": row.id, "tag": row.tag, "count": row.total_count}
+        {"id": row.id, "tag": row.tag, "count": row.total_count,"devices": row.device_count}
         for row in tags_query.all()
     ]
 
