@@ -412,3 +412,25 @@ def update_watch_date():
     }), 200
 
     
+@device_bp.route('/countries', methods=['GET'])
+@token_required
+def get_countries():
+    project_id = g.project_id
+
+    if not project_id:
+        return jsonify({"error": "Missing required parameter: project_id"}), 400
+
+    countries = (
+        db.session.query(Device.country)
+        .filter(
+            Device.project_id == project_id,
+            Device.country.isnot(None)
+        )
+        .distinct()
+        .order_by(Device.country.asc())
+        .all()
+    )
+
+    return jsonify({
+        "countries": [c[0] for c in countries]
+    })
