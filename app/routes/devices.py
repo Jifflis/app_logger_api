@@ -93,6 +93,7 @@ def get_devices():
     is_watch_list = request.args.get("is_watch_list", "false").lower() == "true"
     name_filter = request.args.get("name")
     log_tag_id = request.args.get("log_tag_id")
+    country = request.args.get("country")
     
     #most_recent,logs_desc,logs_asc,sessions_desc,sessions_asc
     #actions_desc,actions_asc,registered_desc, registered_asc
@@ -131,6 +132,7 @@ def get_devices():
             DeviceLog.actual_log_time < end_dt
         )
     )
+    
     
     # Filter by LogTag ID
     if log_tag_id:
@@ -189,6 +191,9 @@ def get_devices():
         
     if name_filter:
         query = query.filter(Device.name.ilike(f"%{name_filter}%"))    
+        
+    if country:
+        query = query.filter(Device.country.ilike(f"%{country}%"))
         
     # Platform filter
     if platform_str:
