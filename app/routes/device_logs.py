@@ -430,3 +430,117 @@ def delete_log(log_id):
     db.session.delete(log)
     db.session.commit()
     return jsonify({'message': 'Log deleted'})
+
+
+@log_bp.route('/log-position', methods=['GET'])
+@token_required
+def get_log_page_position():
+    """
+    Returns:
+    - page position of a specific log_id
+    - logs belonging to that page
+
+    Query params:
+    - instance_id
+    - log_id
+    - limit
+
+    Example:
+    GET /logs/log-position?instance_id=abc123&log_id=55&limit=20
+    """
+
+    project_id = g.project_id
+
+    instance_id = request.args.get("instance_id")
+    log_id = request.args.get("log_id", type=int)
+    limit = request.args.get("limit", default=20, type=int)
+
+    if not instance_id:
+        return jsonify({"error": "Missing instance_id"}), 400
+
+    if not log_id:
+        return jsonify({"error": "Missing log_id"}), 400
+
+    # validate log exists
+    target_log = (
+        db.session.query(DeviceLog)
+        .join(Device, Device.instance_id == DeviceLog.instance_id)
+        .filter(
+            Device.project_id == project_id,
+            DeviceLog.instance_id == instance_id,
+            DeviceLog.log_id == log_id
+        )
+        .first()
+    )
+
+    if not target_log:
+        return jsonify({"error": "Log not found"}), 404
+
+    # count logs BEFORE this log
+    # ordering: newest first
+    logs_before = (
+        db.session.query(func.count(DeviceLog.log_id))
+        .join(Device, Device.instance_id == DeviceLog.instance_id)
+        .filter(
+            Device.project_id == project_id,
+            DeviceLog.instance_id == instance_id,
+            (
+                (DeviceLog.actual_log_time > target_log.actual_log_time)
+                |
+                (
+                    (DeviceLog.actual_log_time == target_log.actual_log_time)
+                    &
+                    (DeviceLog.log_id > target_log.log_id)
+                )
+            )
+        )
+        .scalar()
+    )
+
+    # determine page
+    page = (logs_before // limit) + 1
+
+    # fetch logs for that page
+    query = (
+        db.session.query(DeviceLog)
+        .join(Device, Device.instance_id == DeviceLog.instance_id)
+        .filter(
+            Device.project_id == project_id,
+            DeviceLog.instance_id == instance_id
+        )
+        .order_by(
+            desc(DeviceLog.actual_log_time),
+            desc(DeviceLog.log_id)
+        )
+    )
+
+    total_items = query.count()
+
+    logs = (
+        query.offset((page - 1) * limit)
+        .limit(limit)
+        .all()
+    )
+
+    logs_data = [
+        {
+            "log_id": log.log_id,
+            "instance_id": log.instance_id,
+            "level": log.level.value if log.level else None,
+            "tag": getattr(log.log_tag, "tag", None),
+            "message": log.message,
+            "actual_log_time": to_iso_utc(log.actual_log_time),
+            "created_at": to_iso_utc(log.created_at),
+        }
+        for log in logs
+    ]
+
+    return jsonify({
+        "log_id": log_id,
+        "instance_id": instance_id,
+        "page": page,
+        "limit": limit,
+        "total_items": total_items,
+        "logs_before": logs_before,
+        "logs": logs_data,
+    })
