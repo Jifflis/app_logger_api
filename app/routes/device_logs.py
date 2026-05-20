@@ -301,7 +301,10 @@ def get_logs_by_instance():
             return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD."}), 400
 
     # --- 5️⃣ Ordering ---
-    query = query.order_by(desc(DeviceLog.actual_log_time))
+    query = query.order_by(
+        desc(DeviceLog.actual_log_time),
+        desc(DeviceLog.log_id)
+)
 
     # --- 6️⃣ Pagination ---
     total_items = query.count()
