@@ -518,7 +518,7 @@ def get_log_page_position():
     )
 
     total_items = query.count()
-    total_pages = (total_items + limit - 1)
+    total_pages = (total_items + limit - 1) // limit
 
     logs = (
         query.offset((page - 1) * limit)
