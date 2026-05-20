@@ -518,13 +518,37 @@ def get_log_page_position():
     )
 
     total_items = query.count()
+    total_pages = (total_items + limit - 1)
 
     logs = (
         query.offset((page - 1) * limit)
         .limit(limit)
         .all()
     )
+    
+    # device info
+    device = Device.query.filter_by(
+            project_id=project_id,
+            instance_id=instance_id
+        ).first()
 
+    device_info = None
+
+    if device:
+        device_info = {
+            "instance_id": device.instance_id,
+            "device_id": device.device_id,
+            "project_id": device.project_id,
+            "name": device.name,
+            "model": device.model,
+            "platform": device.platform.value if device.platform else None,
+            "country": device.country,
+            "watch_date": to_iso_utc(device.watch_date),
+            "created_at": to_iso_utc(device.created_at),
+            "last_updated": to_iso_utc(device.last_updated),
+        }
+        
+        
     logs_data = [
         {
             "log_id": log.log_id,
@@ -537,13 +561,12 @@ def get_log_page_position():
         }
         for log in logs
     ]
-
     return jsonify({
+        "device": device_info,
         "log_id": log_id,
-        "instance_id": instance_id,
         "page": page,
         "limit": limit,
-        "total_items": total_items,
+        "total_pages": total_pages,
         "logs_before": logs_before,
         "logs": logs_data,
     })
