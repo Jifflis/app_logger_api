@@ -251,6 +251,8 @@ def get_devices():
             "total_actions": int(total_actions),
             "total_errors": int(total_errors),
             "watch_date": to_iso_utc(device.watch_date) if device.watch_date else None,
+            "app_version": device.app_version,
+            "language":device.language,
         })
 
     return jsonify({
