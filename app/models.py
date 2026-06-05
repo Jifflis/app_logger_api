@@ -70,6 +70,8 @@ class Device(db.Model):
     last_updated = db.Column(db.DateTime)
     country = db.Column(db.String(100), nullable=True, index=True)
     watch_date = db.Column(db.DateTime, nullable=True, index=True)
+    app_version = db.Column(db.String(100), nullable=True)
+    language = db.Column(db.String(100),nullable = True)
 
 
     project = db.relationship("Project", back_populates="devices")

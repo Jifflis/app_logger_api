@@ -355,16 +355,34 @@ def get_device(instance_id):
         'model': device.model
     })
 
-@device_bp.route('/<int:instance_id>', methods=['PUT'])
+@device_bp.route('/<string:instance_id>', methods=['PUT'])
 @token_required
 def update_device(instance_id):
     device = Device.query.get_or_404(instance_id)
-    data = request.get_json()
-    device.device_id = data.get('device_id', device.device_id)
-    device.name = data.get('name', device.name)
-    device.model = data.get('model', device.model)
-    device.platform = data.get('platform',device.platform)
+    data = request.get_json() or {}
+
+    if 'device_id' in data:
+        device.device_id = data['device_id']
+
+    if 'name' in data:
+        device.name = data['name']
+
+    if 'model' in data:
+        device.model = data['model']
+
+    if 'platform' in data:
+        device.platform = data['platform']
+
+    if 'language' in data:
+        device.language = data['language']
+
+    if 'app_version' in data:
+        device.app_version = data['app_version']
+
+    device.last_updated = datetime.now(timezone.utc)
+
     db.session.commit()
+
     return jsonify({'message': 'Device updated'})
 
 @device_bp.route('/<int:instance_id>', methods=['DELETE'])
