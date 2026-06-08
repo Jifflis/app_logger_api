@@ -5,7 +5,8 @@ from sqlalchemy import func, desc, case, asc
 from app.models import DeviceLog, Device, Project, LogLevel,Platform,LogTag
 from datetime import datetime,timezone,timedelta
 from app.middleware.auth import token_required
-from app.utils.date_util import to_iso_utc
+from app.utils.date_util import to_iso_utc,parse_iso_datetime
+
 
 log_bp = Blueprint('device_logs', __name__)
 
@@ -234,22 +235,23 @@ def get_logs_summary():
 @token_required
 def get_logs_by_instance():
     """
-    Get logs for a specific device instance.
-    
-    Required:
-      - project_id
-      - instance_id
+            Get logs for a specific device instance.
 
-    Optional:
-      - page
-      - per_page
-      - start_date (YYYY-MM-DD)
-      - end_date (YYYY-MM-DD)
-      - level (INFO | WARNING | ERROR)
+            Required:
+            - instance_id
 
-    Example:
-      GET /logs/by-instance?instance_id=dvc_abc123&page=1&per_page=20
-      GET /logs/by-instance?instance_id=dvc_abc123&start_date=2025-11-01&end_date=2025-11-10&level=ERROR
+            Optional:
+            - page
+            - per_page
+            - start_date ISO datetime, e.g. 2026-06-06T16:00:00.000Z
+            - end_date ISO datetime, e.g. 2026-06-07T16:00:00.000Z
+            - level (INFO | WARNING | ERROR)
+            - log_tag_id
+            - message
+
+            Example:
+            GET /logs/by-instance?instance_id=dvc_abc123&page=1&per_page=20
+            GET /logs/by-instance?instance_id=dvc_abc123&start_date=2026-06-06T16:00:00.000Z&end_date=2026-06-07T16:00:00.000Z&level=ERROR
     """
 
     # --- 1️⃣ Read parameters ---
@@ -258,8 +260,8 @@ def get_logs_by_instance():
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
     level = request.args.get("level")
-    page = int(request.args.get("page", 1))
-    per_page = int(request.args.get("per_page", 20))
+    page = max(int(request.args.get("page", 1)), 1)
+    per_page = min(max(int(request.args.get("per_page", 20)), 1), 100)
     log_tag_id = int(request.args.get("log_tag_id",0))
     message = request.args.get("message")
 
@@ -291,18 +293,21 @@ def get_logs_by_instance():
 
     if start_date_str:
         try:
-            start_dt = datetime.strptime(start_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+            start_dt = parse_iso_datetime(start_date_str)
             query = query.filter(DeviceLog.actual_log_time >= start_dt)
         except ValueError:
-            return jsonify({"error": "Invalid start_date format. Use YYYY-MM-DD."}), 400
+            return jsonify({
+                "error": "Invalid start_date format. Use ISO format, e.g. 2026-06-06T16:00:00.000Z"
+            }), 400
 
     if end_date_str:
         try:
-            # Include full day
-            end_dt = datetime.strptime(end_date_str, "%Y-%m-%d").replace(tzinfo=timezone.utc) + timedelta(days=1)
+            end_dt = parse_iso_datetime(end_date_str)
             query = query.filter(DeviceLog.actual_log_time < end_dt)
         except ValueError:
-            return jsonify({"error": "Invalid end_date format. Use YYYY-MM-DD."}), 400
+            return jsonify({
+                "error": "Invalid end_date format. Use ISO format, e.g. 2026-06-07T16:00:00.000Z"
+            }), 400
 
     # --- 5️⃣ Ordering ---
     query = query.order_by(
