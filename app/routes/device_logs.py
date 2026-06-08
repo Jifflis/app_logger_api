@@ -261,6 +261,7 @@ def get_logs_by_instance():
     page = int(request.args.get("page", 1))
     per_page = int(request.args.get("per_page", 20))
     log_tag_id = int(request.args.get("log_tag_id",0))
+    message = request.args.get("message")
 
     # --- 2️⃣ Validation ---
     if not project_id:
@@ -283,7 +284,10 @@ def get_logs_by_instance():
         query = query.filter(DeviceLog.level == level.upper())
         
     if log_tag_id:
-        query = query.filter(DeviceLog.log_tag_id == log_tag_id)    
+        query = query.filter(DeviceLog.log_tag_id == log_tag_id)
+        
+    if message:
+        query = query.filter(DeviceLog.message.ilike(f"%{message}%"))        
 
     if start_date_str:
         try:
@@ -356,6 +360,7 @@ def get_logs_by_instance():
             "end_date": end_date_str,
             "level": level,
             "log_tag_id":log_tag_id,
+             "message": message,
         }
     })
         
