@@ -36,7 +36,7 @@ def create_app():
     from app.routes.log_tags import log_tag_bp
     from app.routes.actions import actions_bp
     from app.routes.sessions import sessions_bp
-    from app.routes.transcription import transcribe_bp
+    #from app.routes.transcription import transcribe_bp
 
     # Register blueprints
     app.register_blueprint(user_bp, url_prefix='/api/users')
@@ -49,5 +49,5 @@ def create_app():
     app.register_blueprint(log_tag_bp, url_prefix='/api/log_tags')
     app.register_blueprint(actions_bp, url_prefix='/api/actions')
     app.register_blueprint(sessions_bp, url_prefix='/api/sessions')
-    app.register_blueprint(transcribe_bp, url_prefix='/api/transcription')
+   # app.register_blueprint(transcribe_bp, url_prefix='/api/transcription')
     return app
