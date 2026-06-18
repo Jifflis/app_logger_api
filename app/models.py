@@ -18,7 +18,14 @@ class Platform(enum.Enum):
     ANDROID = "android"
     MACOS = "macos"
     WINDOWS = "windows"
-    UNKNOWN = "unknown"    
+    UNKNOWN = "unknown"   
+     
+class FieldType(enum.Enum):
+    TEXT = "text"
+    NUMBER = "number"
+    DATE = "date"
+    EMAIL = "email"
+    BOOLEAN = "boolean"    
 
 
 class User(db.Model):
@@ -51,12 +58,62 @@ class Project(db.Model):
     tags = db.relationship("DeviceTag", back_populates="project", cascade="all, delete-orphan")
     tokens = db.relationship("Token", back_populates="project", cascade="all, delete-orphan")
     logTags =db.relationship("LogTag", back_populates="project", cascade="all, delete-orphan")
-    
+    custom_field_definitions = db.relationship("CustomFieldDefinition", back_populates="project", cascade="all, delete-orphan")
+      
       # enforce unique project name per user
     __table_args__ = (
         db.UniqueConstraint('user_id', 'name', name='uq_user_project_name'),
     )
 
+
+class CustomFieldDefinition(db.Model):
+    __tablename__ = "custom_field_definitions"
+
+    field_id = db.Column(db.Integer, primary_key=True)
+    project_id = db.Column(db.Integer, db.ForeignKey("projects.project_id"), nullable=False, index=True)
+    name = db.Column(db.String(100), nullable=False, index=True)
+    field_type = db.Column(db.Enum(FieldType), nullable=False)
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    project = db.relationship("Project", back_populates="custom_field_definitions")
+    custom_field_values = db.relationship("CustomFieldValue", back_populates="field_definition", cascade="all, delete-orphan")
+
+    __table_args__ = (
+        db.UniqueConstraint("project_id", "name", name="uq_project_field_name"),
+    )
+
+
+class CustomFieldValue(db.Model):
+    __tablename__ = "custom_field_values"
+
+    value_id = db.Column(db.Integer, primary_key=True)
+    field_id = db.Column(db.Integer, db.ForeignKey("custom_field_definitions.field_id"), nullable=False, index=True)
+    instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False, index=True)
+    value = db.Column(db.String(255), index=True)
+    created_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc)
+    )
+
+    field_definition = db.relationship("CustomFieldDefinition", back_populates="custom_field_values")
+    device = db.relationship("Device", back_populates="custom_field_values")
+
+    __table_args__ = (
+        db.UniqueConstraint(
+            "instance_id",
+            "field_id",
+            name="uq_device_field_value"
+        ),
+        db.Index(
+            "ix_custom_field_values_field_id_value",
+            "field_id",
+            "value"
+        ),
+    )
+     
 class Device(db.Model):
     __tablename__ = "devices"
 
@@ -81,6 +138,7 @@ class Device(db.Model):
     tags = db.relationship("DeviceTag", back_populates="device", cascade="all, delete-orphan")
     # One device → many device_sessions
     sessions = db.relationship("DeviceSession", back_populates="device", cascade="all, delete-orphan")
+    custom_field_values = db.relationship("CustomFieldValue", back_populates="device", cascade="all, delete-orphan")
 
 
 class DeviceLog(db.Model):

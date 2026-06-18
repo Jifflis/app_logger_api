@@ -24,7 +24,24 @@ def create_project():
 @project_bp.route('', methods=['GET'])
 def get_projects():
     projects = Project.query.all()
-    return jsonify([{'project_id': p.project_id, 'name': p.name, 'user_id': p.user_id} for p in projects])
+    return jsonify(
+        [
+            {
+                'project_id': p.project_id, 
+                'name': p.name, 
+                'user_id': p.user_id,
+                'tokens': [
+                {
+                    'id': token.id,
+                    'token': token.token,
+                    'created_at': token.created_at.isoformat() if token.created_at else None
+                }
+                    for token in p.tokens
+        ]
+            } for p in projects
+            
+        ]
+    )
 
 @project_bp.route('/<int:project_id>', methods=['GET'])
 def get_project(project_id):
