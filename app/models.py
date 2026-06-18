@@ -139,6 +139,28 @@ class Device(db.Model):
     # One device → many device_sessions
     sessions = db.relationship("DeviceSession", back_populates="device", cascade="all, delete-orphan")
     custom_field_values = db.relationship("CustomFieldValue", back_populates="device", cascade="all, delete-orphan")
+    push_tokens = db.relationship("PushToken", back_populates="device", cascade="all, delete-orphan")
+
+
+class PushToken(db.Model):
+    __tablename__ = "pushTokens"
+
+    id = db.Column(db.Integer, primary_key=True)
+    instance_id = db.Column(db.String(100), db.ForeignKey("devices.instance_id"), nullable=False, index=True)
+    token = db.Column(db.String(512), nullable=False, index=True)
+    platform = db.Column(db.Enum(Platform), nullable=False, index=True, default=Platform.UNKNOWN)
+    created_at = db.Column(db.DateTime, default=lambda: datetime.now(timezone.utc), index=True)
+    updated_at = db.Column(
+        db.DateTime,
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc)
+    )
+
+    device = db.relationship("Device", back_populates="push_tokens")
+
+    __table_args__ = (
+        db.UniqueConstraint("instance_id", "token", name="uq_device_push_token"),
+    )
 
 
 class DeviceLog(db.Model):
