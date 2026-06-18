@@ -27,6 +27,10 @@ List push tokens for one device:
 curl -X GET "https://your-domain.com/api/pushTokens?instance_id=device-instance-id" \
   -H "Authorization: <api-token>"
 
+Get push tokens by device instance id:
+curl -X GET https://your-domain.com/api/pushTokens/instance/device-instance-id \
+  -H "Authorization: <api-token>"
+
 List push tokens for one platform:
 curl -X GET "https://your-domain.com/api/pushTokens?platform=android" \
   -H "Authorization: <api-token>"
@@ -172,6 +176,26 @@ def get_push_tokens():
 def get_push_token(push_token_id):
     push_token = get_project_push_token_or_404(push_token_id)
     return jsonify({'pushToken': serialize_push_token(push_token)})
+
+
+@push_token_bp.route('/instance/<string:instance_id>', methods=['GET'])
+@token_required
+def get_push_tokens_by_instance_id(instance_id):
+    device = get_project_device(instance_id)
+    if not device:
+        return jsonify({'error': 'Device not found'}), 404
+
+    push_tokens = (
+        PushToken.query
+        .filter_by(instance_id=device.instance_id)
+        .order_by(PushToken.created_at.desc())
+        .all()
+    )
+
+    return jsonify({
+        'instance_id': device.instance_id,
+        'pushTokens': [serialize_push_token(push_token) for push_token in push_tokens]
+    })
 
 
 @push_token_bp.route('/<int:push_token_id>', methods=['PUT'])
