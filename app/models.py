@@ -163,6 +163,17 @@ class PushToken(db.Model):
     )
 
 
+class Instance(db.Model):
+    __tablename__ = "instances"
+
+    id = db.Column(db.Integer, primary_key=True)
+    instance_id = db.Column(db.String(100), nullable=False, index=True)
+
+    __table_args__ = (
+        db.UniqueConstraint("instance_id", name="uq_instances_instance_id"),
+    )
+
+
 class DeviceLog(db.Model):
     __tablename__ = "device_logs"
 

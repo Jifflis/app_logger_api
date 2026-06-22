@@ -39,6 +39,7 @@ def create_app():
     #from app.routes.transcription import transcribe_bp
     from app.routes.custom_field import custom_field_bp
     from app.routes.push_tokens import push_token_bp
+    from app.routes.instances import instance_bp
 
     # Register blueprints
     app.register_blueprint(user_bp, url_prefix='/api/users')
@@ -54,4 +55,5 @@ def create_app():
    # app.register_blueprint(transcribe_bp, url_prefix='/api/transcription')
     app.register_blueprint(custom_field_bp, url_prefix='/api/custom-field')
     app.register_blueprint(push_token_bp, url_prefix='/api/pushTokens')
+    app.register_blueprint(instance_bp, url_prefix='/api/instances')
     return app
